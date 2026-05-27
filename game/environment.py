@@ -18,7 +18,9 @@ import pygame
 import pymunk
 
 from ai.reward_system import compute_reward
-from config.settings import CHECKPOINT_TIME, MAX_TIME, SCREEN_HEIGHT, SCREEN_WIDTH
+from config.settings import (
+    CHECKPOINT_TIME, LOOKAHEAD_DISTANCES, MAX_TIME, SCREEN_HEIGHT, SCREEN_WIDTH,
+)
 from game.camera import Camera
 from game.checkpoint import Checkpoint, CHECKPOINT_HEIGHT, CHECKPOINT_WIDTH
 from game.coin import Coin, COIN_RADIUS, COIN_VALUE, COIN_Y_OFFSET
@@ -41,6 +43,22 @@ _COIN_START_X: int = 400   # primera moneda (deja margen libre en la zona de spa
 
 # Posiciones X de los 5 checkpoints, distribuidos a lo largo del terreno (~4 km)
 _CHECKPOINT_X_POSITIONS: tuple[int, ...] = (700, 1400, 2100, 2800, 3500)
+
+# ---------------------------------------------------------------------------
+# Constantes de normalización para get_state()
+# ---------------------------------------------------------------------------
+# La red neuronal trabaja bien cuando sus entradas están en [-1, 1].
+# Para lograrlo dividimos cada valor por la magnitud máxima esperada.
+# Estos máximos son empíricos: si la IA recibe valores > 1 de forma habitual,
+# se pueden subir; si están siempre muy por debajo de 1, se pueden bajar.
+
+_VX_NORM     = 600.0   # px/s — velocidad horizontal máxima esperada del chasis
+_VY_NORM     = 600.0   # px/s — velocidad vertical máxima esperada del chasis
+_OMEGA_NORM  = 10.0    # rad/s — velocidad angular máxima del chasis
+_HEIGHT_NORM = 200.0   # px — diferencia de altura máxima en el lookahead
+_SLOPE_NORM  = 0.5     # px/px — pendiente máxima del terreno (|ΔY/ΔX|)
+_COIN_X_NORM = 1280.0  # px — distancia horizontal máxima hasta moneda (≈ SCREEN_WIDTH)
+_COIN_Y_NORM = 400.0   # px — distancia vertical máxima hasta moneda
 
 # ---------------------------------------------------------------------------
 # Paleta de colores para renderizado placeholder (sin sprites aún)
@@ -158,6 +176,15 @@ class Environment:
         self._player  = Player(space=space, chassis=self._vehicle.chassis)
         self._camera  = Camera()
 
+        # Registrar las shapes de rueda en el engine para que el handler
+        # wheel-terrain pueda distinguir cuál es la trasera y cuál la delantera.
+        # Debe hacerse DESPUÉS de crear el vehículo (las shapes ya existen)
+        # y ANTES del primer step() (el handler necesita las referencias).
+        self._engine.register_wheel_shapes(
+            self._vehicle.back_wheel_shape,
+            self._vehicle.front_wheel_shape,
+        )
+
         # Estado del episodio
         self.score: int            = 0
         self.max_distance: float   = 0.0   # distancia horizontal máxima desde spawn
@@ -231,6 +258,12 @@ class Environment:
         if self._engine.player_touched_ground:
             self.done = True
 
+        # Propagar contactos de ruedas del engine al vehículo.
+        # physics.py detecta el contacto vía pre_solve; vehicle.py expone los
+        # flags para que get_state() los lea con la interfaz existente.
+        self._vehicle.back_wheel_contact  = self._engine.back_wheel_on_ground
+        self._vehicle.front_wheel_contact = self._engine.front_wheel_on_ground
+
         # Procesar monedas tocadas en este frame.
         # pop(shape, None) maneja de forma segura el caso de que la misma shape
         # aparezca dos veces (rueda + chasis activan el handler en el mismo step).
@@ -297,10 +330,91 @@ class Environment:
 
     def get_state(self) -> list[float]:
         """
-        Stub del vector de estado de 14 entradas para la IA.
-        Implementación completa en Fase 4.
+        Devuelve el vector de estado de 14 entradas para la red neuronal.
+
+        Todos los valores están normalizados aproximadamente a [-1, 1] o [0, 1]
+        para que ninguna entrada domine el cálculo de la red.
+
+        Índices del vector:
+            0  — vx normalizado (velocidad horizontal del chasis)
+            1  — vy normalizado (velocidad vertical del chasis)
+            2  — ángulo del chasis en [-1, 1] (radianes / π)
+            3  — velocidad angular normalizada
+            4  — contacto rueda trasera  (0.0 o 1.0)
+            5  — contacto rueda delantera (0.0 o 1.0)
+            6  — lookahead terreno a +30 px (relativo al suelo actual)
+            7  — lookahead terreno a +80 px
+            8  — lookahead terreno a +150 px
+            9  — lookahead terreno a +250 px
+            10 — pendiente del terreno en la posición actual
+            11 — Δx a la moneda más cercana (normalizado)
+            12 — Δy a la moneda más cercana (normalizado)
+            13 — tiempo restante normalizado (0.0 a 1.0)
         """
-        return []
+        chassis  = self._vehicle.chassis
+        vel      = chassis.velocity
+        chassis_x = float(chassis.position.x)
+        chassis_y = float(chassis.position.y)
+
+        # Entradas 0-1: velocidades — clamp a [-1, 1] por si el vehículo
+        # supera el máximo esperado en un momento puntual (ej. caída libre)
+        vx = max(-1.0, min(1.0, vel.x / _VX_NORM))
+        vy = max(-1.0, min(1.0, vel.y / _VY_NORM))
+
+        # Entrada 2: ángulo — chassis.angle ya está en radianes.
+        # Dividir por π mapea [-π, π] → [-1, 1] exactamente, sin clamp.
+        angle = chassis.angle / math.pi
+
+        # Entrada 3: velocidad angular — positivo = giro horario en pantalla
+        omega = max(-1.0, min(1.0, chassis.angular_velocity / _OMEGA_NORM))
+
+        # Entradas 4-5: contacto de ruedas — ya propagados en step()
+        back_contact  = 1.0 if self._vehicle.back_wheel_contact  else 0.0
+        front_contact = 1.0 if self._vehicle.front_wheel_contact else 0.0
+
+        # Entradas 6-9: lookahead del terreno
+        # Calculamos la diferencia de altura entre el suelo en la posición
+        # del vehículo y el suelo a cada distancia hacia adelante.
+        # Valor positivo → el suelo adelante está más abajo (bajada).
+        # Valor negativo → el suelo adelante está más arriba (subida/colina).
+        terrain_here = self._terrain.height_at(chassis_x)
+        lookaheads: list[float] = []
+        for offset in LOOKAHEAD_DISTANCES:
+            raw = self._terrain.height_at(chassis_x + offset) - terrain_here
+            lookaheads.append(max(-1.0, min(1.0, raw / _HEIGHT_NORM)))
+
+        # Entrada 10: pendiente actual del terreno
+        # slope_at() devuelve ΔY/ΔX. Con _SLOPE_NORM=0.5, una pendiente de
+        # 0.5 (≈ 27°) mapea a 1.0. Pendientes mayores se clampean a ±1.
+        slope = max(-1.0, min(1.0, self._terrain.slope_at(chassis_x) / _SLOPE_NORM))
+
+        # Entradas 11-12: vector hasta la moneda más cercana
+        if self._coin_map:
+            # min() con key= evita crear una lista intermedia; O(n) sobre las monedas
+            nearest = min(
+                self._coin_map.values(),
+                key=lambda c: (c.position.x - chassis_x) ** 2
+                            + (c.position.y - chassis_y) ** 2,
+            )
+            dx = max(-1.0, min(1.0, (nearest.position.x - chassis_x) / _COIN_X_NORM))
+            dy = max(-1.0, min(1.0, (nearest.position.y - chassis_y) / _COIN_Y_NORM))
+        else:
+            # Sin monedas restantes: indicar "no hay objetivo" con valores extremos.
+            # La red aprenderá a ignorar estas entradas cuando ya no hay monedas.
+            dx, dy = 1.0, 0.0
+
+        # Entrada 13: tiempo restante — max_time puede crecer con checkpoints,
+        # así que clamp a [0, 1] por si time_left supera MAX_TIME.
+        time_norm = max(0.0, min(1.0, self.time_left / MAX_TIME))
+
+        return [
+            vx, vy, angle, omega,
+            back_contact, front_contact,
+            *lookaheads,
+            slope,
+            dx, dy,
+            time_norm,
+        ]
 
     # ------------------------------------------------------------------
     # Renderizado (back-to-front: lo primero dibujado queda detrás)

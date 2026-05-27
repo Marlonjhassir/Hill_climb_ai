@@ -53,9 +53,13 @@ class PhysicsEngine:
         engine = PhysicsEngine()
         space  = engine.get_space()
         # ... añadir cuerpos al space ...
+        engine.register_wheel_shapes(vehicle.back_wheel_shape,
+                                     vehicle.front_wheel_shape)
         engine.step(1 / 60)
         if engine.player_touched_ground:
             done = True
+        back_contact  = engine.back_wheel_on_ground
+        front_contact = engine.front_wheel_on_ground
     """
 
     def __init__(self) -> None:
@@ -75,6 +79,16 @@ class PhysicsEngine:
         self.space.damping = 0.9
 
         # ------------------------------------------------------------------
+        # Referencias a las shapes de ruedas — usadas en el handler de contacto
+        # ------------------------------------------------------------------
+        # physics.py necesita saber cuál shape es la rueda trasera y cuál la
+        # delantera para poder distinguirlas dentro del callback wheel-terrain.
+        # Se inicializan a None; environment.py llama register_wheel_shapes()
+        # tras crear el vehículo para establecerlas.
+        self._back_wheel_shape:  pymunk.Shape | None = None
+        self._front_wheel_shape: pymunk.Shape | None = None
+
+        # ------------------------------------------------------------------
         # Flags de eventos — el "buzón" entre physics.py y environment.py
         # ------------------------------------------------------------------
         # physics.py los activa dentro de los callbacks de colisión.
@@ -85,6 +99,11 @@ class PhysicsEngine:
 
         # True si el cuerpo del jugador tocó el terreno en este frame.
         self.player_touched_ground: bool = False
+
+        # True si la rueda trasera/delantera está en contacto con el terreno.
+        # Se usa en get_state() para que la IA sepa si el vehículo tiene tracción.
+        self.back_wheel_on_ground:  bool = False
+        self.front_wheel_on_ground: bool = False
 
         # Lista de shapes de monedas tocadas en este frame.
         # environment.py las elimina del Space y actualiza el score.
@@ -99,6 +118,34 @@ class PhysicsEngine:
         self._setup_collision_handlers()
 
     # ------------------------------------------------------------------
+    # Registro de shapes de ruedas
+    # ------------------------------------------------------------------
+
+    def register_wheel_shapes(
+        self,
+        back:  pymunk.Shape,
+        front: pymunk.Shape,
+    ) -> None:
+        """
+        Registra las shapes de rueda para el handler de contacto con terreno.
+
+        Debe llamarse desde environment.py después de crear el vehículo, antes
+        del primer step(). Sin esta llamada, back_wheel_on_ground y
+        front_wheel_on_ground permanecerán siempre en False.
+
+        Por qué necesitamos esto:
+            Ambas ruedas comparten COLLISION_WHEEL = 3. El handler wheel-terrain
+            no puede saber por tipo de colisión cuál es cuál; necesita comparar
+            la shape concreta del arbiter contra referencias guardadas aquí.
+
+        Args:
+            back:  shape de la rueda trasera (vehicle.back_wheel_shape).
+            front: shape de la rueda delantera (vehicle.front_wheel_shape).
+        """
+        self._back_wheel_shape  = back
+        self._front_wheel_shape = front
+
+    # ------------------------------------------------------------------
     # Configuración de collision handlers
     # ------------------------------------------------------------------
 
@@ -106,12 +153,19 @@ class PhysicsEngine:
         """
         Registra los handlers entre categorías de cuerpos.
 
-        API de pymunk 7.x: on_collision(tipo_A, tipo_B, begin=callback, ...)
-          - Los callbacks se pasan como parámetros keyword, no como atributos.
+        API de pymunk 7.x: on_collision(tipo_A, tipo_B, begin=cb, pre_solve=cb, ...)
           - 'begin' se llama en el PRIMER frame de contacto.
-          - Los callbacks devuelven None (no bool). Para que las monedas sean
-            pass-through (no empujen el vehículo), su shape debe tener
-            sensor=True — esto se configura en coin.py cuando creemos las monedas.
+          - 'pre_solve' se llama CADA frame mientras el contacto persiste.
+          - Los callbacks devuelven None. Para que las monedas sean pass-through,
+            su shape debe tener sensor=True (configurado en coin.py).
+
+        Elección begin vs pre_solve:
+          - Jugador, monedas, checkpoints → 'begin': son eventos puntuales
+            (la primera vez que se tocan es lo que importa).
+          - Rueda vs terreno → 'pre_solve': necesitamos saber si la rueda
+            ACTUALMENTE está en contacto (información de estado continuo),
+            no solo si empezó a tocar. Con begin + clear-en-step(), el flag
+            se borraría antes de que begin vuelva a disparar → siempre False.
         """
 
         # --- Jugador vs Terreno -------------------------------------------
@@ -119,6 +173,15 @@ class PhysicsEngine:
         self.space.on_collision(
             COLLISION_PLAYER, COLLISION_TERRAIN,
             begin=self._on_player_ground_begin,
+        )
+
+        # --- Rueda vs Terreno (contacto continuo para get_state) ----------
+        # pre_solve dispara cada frame mientras la rueda toca el suelo.
+        # Borramos los flags ANTES de space.step(), pre_solve los re-activa
+        # durante space.step() si el contacto sigue vivo.
+        self.space.on_collision(
+            COLLISION_WHEEL, COLLISION_TERRAIN,
+            pre_solve=self._on_wheel_ground_pre_solve,
         )
 
         # --- Rueda vs Moneda -----------------------------------------------
@@ -150,6 +213,10 @@ class PhysicsEngine:
             begin=self._on_checkpoint_crossed,
         )
 
+    # ------------------------------------------------------------------
+    # Callbacks de colisión
+    # ------------------------------------------------------------------
+
     def _on_player_ground_begin(
         self,
         _arbiter: pymunk.Arbiter,
@@ -164,6 +231,32 @@ class PhysicsEngine:
         Solo necesitamos activar el flag para que environment.py lo lea.
         """
         self.player_touched_ground = True
+
+    def _on_wheel_ground_pre_solve(
+        self,
+        arbiter: pymunk.Arbiter,
+        _space: pymunk.Space,
+        _data: object,
+    ) -> None:
+        """
+        Callback: una rueda está en contacto con el terreno en este frame.
+
+        Se llama con 'pre_solve', que dispara cada frame durante el contacto.
+        Combinado con el borrado de flags al inicio de step(), esto garantiza
+        que los flags solo son True mientras el contacto está activo.
+
+        Identifica cuál rueda es comparando la shape del arbiter contra las
+        referencias guardadas en register_wheel_shapes().
+        """
+        for shape in arbiter.shapes:
+            if shape.collision_type == COLLISION_WHEEL:
+                # Comparamos la identidad del objeto (is), no el valor,
+                # porque dos shapes distintas pueden tener el mismo tipo.
+                if shape is self._back_wheel_shape:
+                    self.back_wheel_on_ground = True
+                elif shape is self._front_wheel_shape:
+                    self.front_wheel_on_ground = True
+                break
 
     def _on_checkpoint_crossed(
         self,
@@ -224,9 +317,13 @@ class PhysicsEngine:
 
         Los flags se limpian ANTES de space.step() para que solo reflejen
         eventos del frame actual, no acumulados de frames anteriores.
+        En particular, back/front_wheel_on_ground se ponen a False aquí y
+        el callback pre_solve los vuelve a activar si el contacto persiste.
         """
         # Limpiar eventos del frame anterior
         self.player_touched_ground = False
+        self.back_wheel_on_ground  = False
+        self.front_wheel_on_ground = False
         self.coins_collected.clear()
         self.checkpoints_crossed.clear()
 
