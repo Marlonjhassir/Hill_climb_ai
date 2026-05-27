@@ -1,6 +1,6 @@
 # Progreso del proyecto
 
-## Fase actual: 4 — Estados de IA ✅ (completada 2026-05-27)
+## Fase actual: 5 — Red Neuronal 🔄 (en curso, 2026-05-27)
 
 ## Fase 1 — Preparación ✅ (completada por el usuario)
 
@@ -120,12 +120,30 @@ terreno procedural cuál produce mejor comportamiento de aprendizaje.
 
 ---
 
+---
+
+## Fase 5 — Red Neuronal 🔄 (en curso, 2026-05-27)
+
+### Archivos implementados
+| Archivo | Estado | Notas |
+|---|---|---|
+| `ai/neural_network.py` | ✅ | PolicyNet 14→16(tanh)→12(tanh)→2(sigmoid), sin gradientes |
+| `ai/genome.py` | ⬜ | Pendiente |
+
+### PolicyNet — detalles
+- Arquitectura construida dinámicamente desde `NN_INPUTS`, `NN_HIDDEN`, `NN_OUTPUTS` en `settings.py`.
+- `requires_grad=False` en todos los parámetros al construir.
+- `forward()` envuelto en `torch.no_grad()`.
+- `get_weights()` → vector 1D NumPy float32, copia segura (`.detach().numpy().copy()`).
+- `set_weights(weights)` → inyecta vector 1D con validación de tamaño.
+- `n_params` → propiedad; para arquitectura 14→16→12→2 devuelve **470**.
+
+---
+
 ## Último avance
 - Fecha: 2026-05-27
-- Archivos: `game/physics.py`, `game/environment.py`, `experiments/plots.ipynb`
-- Estado: Fase 4 completada — get_state() con 14 entradas normalizadas, verificada con gráficas
+- Archivo: `ai/neural_network.py`
+- Estado: PolicyNet implementada y lista para verificación
 
 ## Siguiente paso
-- Fase 5: implementar `ai/neural_network.py` y `ai/genome.py`
-  - Red 14→16(tanh)→12(tanh)→2(sigmoid) sin gradientes (neuroevolución)
-  - Pesos como vector plano: parameters_to_vector / vector_to_parameters
+- `ai/genome.py`: clase Genome que encapsula PolicyNet + fitness + operadores evolutivos
