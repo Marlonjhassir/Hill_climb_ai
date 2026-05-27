@@ -28,6 +28,21 @@ COLLISION_WHEEL   = 3
 COLLISION_PLAYER  = 4
 COLLISION_COIN    = 5
 
+# ---------------------------------------------------------------------------
+# Grupos de colisión (ShapeFilter)
+# ---------------------------------------------------------------------------
+# pymunk.ShapeFilter(group=N): shapes con el mismo N > 0 NO colisionan entre sí,
+# pero SÍ colisionan con shapes de otros grupos (incluido el grupo 0 por defecto).
+#
+# VEHICLE_GROUP agrupa chasis + ruedas + conductor.
+# Por qué es CRÍTICO:
+#   Las ruedas (radio=25px) se solapan geométricamente con el chasis (offset=22px,
+#   mitad_alto=17.5px → diferencia=4.5px). Sin este filtro, pymunk aplica impulsos
+#   de separación ENORMES entre ruedas y chasis cada frame → vehículo inestable.
+#   Lo mismo ocurre con el conductor, cuyo borde inferior toca el borde superior
+#   del chasis.
+VEHICLE_GROUP: int = 1
+
 
 class PhysicsEngine:
     """

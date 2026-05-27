@@ -65,27 +65,31 @@ class Terrain:
         """
         self.points = [
             # (x,    y)     — comentario de referencia
-            (0,    500),   # inicio plano; punto de spawn del vehículo
-            (200,  510),   # ligera bajada de arranque
-            (400,  490),
-            (600,  440),   # primera subida
-            (800,  400),   # primera cima
-            (1000, 450),   # bajada al valle
-            (1200, 480),
-            (1400, 420),   # segunda subida
-            (1600, 360),   # segunda cima (más alta)
-            (1800, 410),
-            (2000, 470),   # valle central
-            (2200, 430),
-            (2400, 370),   # tercera subida pronunciada
-            (2600, 310),   # tercera cima (la más alta hasta aquí)
-            (2800, 360),
-            (3000, 420),   # bajada larga
-            (3200, 450),
-            (3400, 400),
-            (3600, 340),   # cuarta colina
-            (3800, 380),
-            (4000, 430),   # final del terreno fijo
+            # Zona de spawn plana: x=0..300 a y=500.
+            # CRÍTICO: si el spawn cae sobre una pendiente, la normal al suelo
+            # tiene componente horizontal que empuja el vehículo hacia un lado.
+            # Una zona plana garantiza que la normal sea 100% vertical al nacer.
+            (0,    500),   # inicio — zona de spawn (plana)
+            (300,  500),   # fin zona plana; a partir de aquí empiezan las colinas
+            (500,  510),   # primera bajada suave
+            (700,  490),
+            (900,  440),   # primera subida
+            (1100, 400),   # primera cima
+            (1300, 450),   # bajada al valle
+            (1500, 480),
+            (1700, 420),   # segunda subida
+            (1900, 360),   # segunda cima (más alta)
+            (2100, 410),
+            (2300, 470),   # valle central
+            (2500, 430),
+            (2700, 370),   # tercera subida pronunciada
+            (2900, 310),   # tercera cima (la más alta)
+            (3100, 360),
+            (3300, 420),   # bajada larga
+            (3500, 450),
+            (3700, 400),
+            (3900, 340),   # cuarta colina
+            (4100, 380),   # final del terreno fijo
         ]
 
     # ------------------------------------------------------------------

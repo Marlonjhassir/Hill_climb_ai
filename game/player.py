@@ -13,7 +13,7 @@ Quien aplica esa regla es environment.py; este módulo solo provee el cuerpo.
 
 import pymunk
 
-from game.physics import COLLISION_PLAYER
+from game.physics import COLLISION_PLAYER, VEHICLE_GROUP
 from game.vehicle import CHASSIS_HEIGHT
 
 # ---------------------------------------------------------------------------
@@ -78,6 +78,11 @@ class Player:
         # no queremos que la fricción aplique fuerzas laterales extrañas
         # al chasis en ese último frame de contacto.
         self.shape.friction = 0.0
+
+        # Mismo grupo que el vehículo: el conductor no colisiona con el chasis
+        # ni las ruedas (ya están unidos por joints y se solapan geométricamente).
+        # Sí sigue colisionando con el terreno (grupo 0) → condición de game over.
+        self.shape.filter = pymunk.ShapeFilter(group=VEHICLE_GROUP)
 
     def _setup_constraints(self, chassis: pymunk.Body) -> None:
         """

@@ -13,7 +13,7 @@ Prohibido: dibujar, leer inputs de teclado, contener lógica de episodio.
 import pymunk
 
 from config.settings import CHASSIS_MASS, WHEEL_MASS, WHEEL_FRICTION
-from game.physics import COLLISION_CHASSIS, COLLISION_WHEEL
+from game.physics import COLLISION_CHASSIS, COLLISION_WHEEL, VEHICLE_GROUP
 
 # ---------------------------------------------------------------------------
 # Constantes del vehículo
@@ -28,7 +28,7 @@ CHASSIS_HEIGHT = 35     # px — alto del chasis
 WHEEL_OFFSET_X = 45     # px — separación horizontal entre centro del chasis y eje de rueda
 WHEEL_OFFSET_Y = 22     # px — las ruedas cuelgan bajo el centro del chasis (Y↓ positivo)
 
-MOTOR_MAX_FORCE   = 8000   # kg·px/s² — torque máximo que puede aplicar el motor
+MOTOR_MAX_FORCE   = 50000  # kg·px/s² — torque máximo que puede aplicar el motor
 ACCELERATION_RATE = 15.0   # rad/s — velocidad angular objetivo al acelerar al 100%
 BRAKE_RATE        = 8.0    # rad/s — velocidad angular objetivo al frenar al 100%
 
@@ -118,6 +118,15 @@ class Vehicle:
         self.front_wheel_shape = pymunk.Circle(self.front_wheel, WHEEL_RADIUS)
         self.front_wheel_shape.friction = WHEEL_FRICTION
         self.front_wheel_shape.collision_type = COLLISION_WHEEL
+
+        # ShapeFilter: chasis y ruedas están en el mismo grupo → pymunk NO
+        # calcula colisiones entre ellas. Sin este filtro, las ruedas (radio=25)
+        # se solapan con el chasis (offset=22 < 17.5+25=42.5) y pymunk aplica
+        # impulsos de separación enormes en cada frame, desestabilizando el vehículo.
+        _vf = pymunk.ShapeFilter(group=VEHICLE_GROUP)
+        self.chassis_shape.filter    = _vf
+        self.back_wheel_shape.filter = _vf
+        self.front_wheel_shape.filter = _vf
 
     def _setup_joints(self) -> None:
         """
@@ -224,7 +233,11 @@ class Vehicle:
         net = self._accel_intensity - self._brake_intensity
 
         if abs(net) > 0.01:
-            rate  = ACCELERATION_RATE * net
+            # El signo negativo es CRÍTICO: en pymunk con Y positivo hacia abajo,
+            # velocidad angular positiva = giro antihorario visualmente = la parte
+            # inferior de la rueda va a la DERECHA = fricción empuja el vehículo
+            # a la IZQUIERDA (retroceso). Negando, logramos avance correcto con D.
+            rate  = -ACCELERATION_RATE * net
             force = MOTOR_MAX_FORCE
         else:
             # Sin input activo: desactivar el motor (ruedas libres)
