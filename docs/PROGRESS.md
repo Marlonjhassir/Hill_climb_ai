@@ -39,13 +39,12 @@
 
 ## Último avance
 - Fecha: 2026-05-27
-- Archivo: — (inicio de Fase 3, pendiente de comenzar)
-- Estado: en espera de instrucción para arrancar
+- Archivo: `game/coin.py`
+- Estado: implementado, pendiente verificación
+- Notas: Body.STATIC (no cae), shape.sensor=True (pass-through sin impulso físico),
+  collision_type=COLLISION_COIN, grupo de colisión 0 (≠ VEHICLE_GROUP=1);
+  COIN_RADIUS=12, COIN_VALUE=1, COIN_Y_OFFSET=35
 
-## Siguiente paso — Fase 3: Sistema de Recompensas
-Orden de archivos (estricto):
-1. `game/coin.py` — moneda física con sensor=True para pass-through
-2. `game/checkpoint.py` — checkpoint que añade tiempo al episodio
-3. `ai/reward_system.py` — recompensa por frame (para análisis y futuro DRL)
-4. Implementar `_compute_reward()` en `environment.py` usando reward_system
-5. Conectar monedas y checkpoints al entorno en `environment.py`
+## Siguiente paso
+- Verificar `game/coin.py` con test headless
+- Continuar con `game/checkpoint.py`
