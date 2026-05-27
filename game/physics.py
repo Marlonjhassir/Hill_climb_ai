@@ -22,11 +22,12 @@ from config.settings import GRAVITY
 # registrado para ese par de enteros y ejecuta sus callbacks.
 # Definimos las constantes aquí para que los demás módulos (vehicle, terrain,
 # player, coin) las importen y las asignen a sus shapes al crearlas.
-COLLISION_TERRAIN = 1
-COLLISION_CHASSIS = 2
-COLLISION_WHEEL   = 3
-COLLISION_PLAYER  = 4
-COLLISION_COIN    = 5
+COLLISION_TERRAIN     = 1
+COLLISION_CHASSIS     = 2
+COLLISION_WHEEL       = 3
+COLLISION_PLAYER      = 4
+COLLISION_COIN        = 5
+COLLISION_CHECKPOINT  = 6
 
 # ---------------------------------------------------------------------------
 # Grupos de colisión (ShapeFilter)
@@ -85,9 +86,15 @@ class PhysicsEngine:
         # True si el cuerpo del jugador tocó el terreno en este frame.
         self.player_touched_ground: bool = False
 
-        # Lista de shapes de monedas que fueron tocadas en este frame.
+        # Lista de shapes de monedas tocadas en este frame.
         # environment.py las elimina del Space y actualiza el score.
         self.coins_collected: list[pymunk.Shape] = []
+
+        # Lista de shapes de checkpoints cruzados en este frame.
+        # Se usa lista (no bool) para identificar cuál checkpoint eliminar.
+        # La comprobación 'not in' evita duplicados si rueda Y chasis cruzan
+        # el mismo checkpoint en el mismo step.
+        self.checkpoints_crossed: list[pymunk.Shape] = []
 
         self._setup_collision_handlers()
 
@@ -128,6 +135,21 @@ class PhysicsEngine:
             begin=self._on_coin_collected,
         )
 
+        # --- Rueda vs Checkpoint ------------------------------------------
+        # El cruce normal: la rueda delantera llega primero al checkpoint.
+        self.space.on_collision(
+            COLLISION_WHEEL, COLLISION_CHECKPOINT,
+            begin=self._on_checkpoint_crossed,
+        )
+
+        # --- Chasis vs Checkpoint -----------------------------------------
+        # Backup: si la rueda pasa por debajo de la base del checkpoint,
+        # el chasis lo detecta igualmente.
+        self.space.on_collision(
+            COLLISION_CHASSIS, COLLISION_CHECKPOINT,
+            begin=self._on_checkpoint_crossed,
+        )
+
     def _on_player_ground_begin(
         self,
         _arbiter: pymunk.Arbiter,
@@ -142,6 +164,27 @@ class PhysicsEngine:
         Solo necesitamos activar el flag para que environment.py lo lea.
         """
         self.player_touched_ground = True
+
+    def _on_checkpoint_crossed(
+        self,
+        arbiter: pymunk.Arbiter,
+        _space: pymunk.Space,
+        _data: object,
+    ) -> None:
+        """
+        Callback: una rueda o el chasis cruzó un checkpoint.
+
+        Identificamos la shape del checkpoint (collision_type == CHECKPOINT)
+        y la añadimos a la lista solo si aún no estaba, para evitar sumar
+        el bono dos veces cuando rueda + chasis cruzan en el mismo step.
+        """
+        for shape in arbiter.shapes:
+            if shape.collision_type == COLLISION_CHECKPOINT:
+                # 'not in' evita el duplicado si múltiples shapes del vehículo
+                # activan el handler en el mismo frame de simulación.
+                if shape not in self.checkpoints_crossed:
+                    self.checkpoints_crossed.append(shape)
+                break
 
     def _on_coin_collected(
         self,
@@ -185,6 +228,7 @@ class PhysicsEngine:
         # Limpiar eventos del frame anterior
         self.player_touched_ground = False
         self.coins_collected.clear()
+        self.checkpoints_crossed.clear()
 
         # Avanzar la simulación: pymunk calcula fuerzas, resuelve restricciones
         # y colisiones, y actualiza posiciones y velocidades de todos los cuerpos.
