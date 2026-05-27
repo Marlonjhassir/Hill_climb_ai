@@ -3,13 +3,13 @@
 ## Fase actual: 2 — Juego Manual
 
 ## Último avance
-- Fecha: 2026-05-26
-- Archivo: `game/terrain.py`
+- Fecha: 2026-05-27
+- Archivo: `game/vehicle.py`
 - Estado: completado y verificado
-- Notas: terreno fijo de 21 puntos, cuerpo STATIC en pymunk, segmentos con
-  friction=WHEEL_FRICTION y collision_type=COLLISION_TERRAIN; height_at() con
-  np.interp y slope_at() con pendiente discreta; seed guardado para futura
-  versión procedural sin cambiar la interfaz
+- Notas: chasis (Poly.create_box, CHASSIS_MASS), dos ruedas (Circle, WHEEL_MASS),
+  PivotJoint para suspensión rígida, SimpleMotor con tracción 100% trasera y 60%
+  delantera; contactos como flags públicos que environment.py actualiza;
+  spawn_y calculado como height_at(x) - WHEEL_OFFSET_Y - WHEEL_RADIUS
 
 ## Siguiente paso
-- Implementar `game/vehicle.py` (chasis + ruedas + motor con pymunk)
+- Implementar `game/player.py` (conductor + colisión con suelo)
