@@ -1,0 +1,689 @@
+\documentclass[11pt,a4paper]{article}
+
+% ====== Paquetes ======
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish]{babel}
+\usepackage{geometry}
+\geometry{margin=2.4cm}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{amsmath}
+\usepackage{tcolorbox}
+
+% ====== Hyperref ======
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    urlcolor=blue!60!black,
+    citecolor=blue!60!black
+}
+
+% ====== Estilo de código Python ======
+\definecolor{codegray}{rgb}{0.95,0.95,0.95}
+\definecolor{codekey}{rgb}{0.0,0.0,0.6}
+\definecolor{codestr}{rgb}{0.58,0.0,0.0}
+\definecolor{codecomment}{rgb}{0.13,0.55,0.13}
+
+\lstdefinestyle{pythonstyle}{
+    language=Python,
+    backgroundcolor=\color{codegray},
+    basicstyle=\ttfamily\footnotesize,
+    keywordstyle=\color{codekey}\bfseries,
+    commentstyle=\color{codecomment}\itshape,
+    stringstyle=\color{codestr},
+    showstringspaces=false,
+    frame=single,
+    rulecolor=\color{gray!40},
+    breaklines=true,
+    tabsize=4,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    numbersep=8pt,
+    captionpos=b
+}
+\lstset{style=pythonstyle}
+
+% ====== Caja de notas pedagógicas ======
+\newtcolorbox{notabox}[1][]{
+    colback=yellow!8,
+    colframe=orange!60!black,
+    boxrule=0.5pt,
+    arc=2pt,
+    left=6pt,right=6pt,top=4pt,bottom=4pt,
+    title=Nota de aprendizaje,
+    fonttitle=\bfseries\small,
+    #1
+}
+
+% ====== Título ======
+\title{\textbf{Plan Maestro de Desarrollo} \\[0.3em] \Large Proyecto Hill Climb AI \\[0.2em] \normalsize Versión 2.0 --- Revisada y comentada}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+\vspace{-2em}
+\tableofcontents
+\newpage
+
+% ============================================================
+\section{Objetivo General}
+% ============================================================
+
+Desarrollar un entorno inspirado en \textit{Hill Climb Racing} utilizando únicamente Python. El proyecto tiene dos componentes principales:
+
+\begin{enumerate}
+    \item \textbf{Simulación jugable} con física basada en restricciones rígidas.
+    \item \textbf{Entrenamiento de una IA} mediante neuroevolución para aprender a conducir automáticamente.
+\end{enumerate}
+
+La simulación se ejecuta visualmente en tiempo real y muestra el aprendizaje de la IA mientras evoluciona generación tras generación.
+
+\textbf{El objetivo final NO es construir un videojuego comercial}, sino un entorno de aprendizaje por refuerzo (vía neuroevolución) modular, extensible y presentable como proyecto de portafolio en ciencia de datos.
+
+\begin{notabox}
+La neuroevolución es una alternativa al aprendizaje por refuerzo clásico (Q-learning, PPO). En lugar de calcular gradientes para mejorar la política, se mantiene una \textit{población} de redes neuronales, se evalúa cuál juega mejor, y los mejores se ``reproducen'' mutando sus pesos. Es ideal para problemas donde la recompensa es escasa o ruidosa, y se puede paralelizar bien.
+\end{notabox}
+
+% ============================================================
+\section{Tecnologías del Proyecto}
+% ============================================================
+
+Instalación inicial:
+
+\begin{lstlisting}[language=bash]
+pip install pygame pymunk numpy torch matplotlib
+\end{lstlisting}
+
+\noindent\textbf{Función de cada librería:}
+
+\begin{itemize}[leftmargin=*]
+    \item \textbf{pygame}: renderizado de gráficos 2D, captura de eventos de teclado/ratón, UI.
+    \item \textbf{pymunk}: motor de física 2D (basado en Chipmunk). Maneja cuerpos rígidos, articulaciones, colisiones y gravedad.
+    \item \textbf{numpy}: operaciones vectoriales rápidas (lookahead de terreno, normalización de estados).
+    \item \textbf{torch}: implementación de la red neuronal. Aunque no usaremos backpropagation, PyTorch facilita el manejo de tensores y será útil si extiendes el proyecto a DRL más adelante.
+    \item \textbf{matplotlib}: gráficas de evolución del fitness, distribuciones de mutación, métricas de entrenamiento.
+\end{itemize}
+
+\begin{notabox}
+\textbf{Sobre PyTorch en neuroevolución:} como NO usamos gradientes, todos los tensores de la red deben crearse con \texttt{requires\_grad=False}, y los forward passes deben envolverse en \texttt{with torch.no\_grad():}. Esto evita que PyTorch construya el grafo computacional y mejora el rendimiento. Es una excelente oportunidad para entender cómo PyTorch separa el cálculo del autograd.
+\end{notabox}
+
+% ============================================================
+\section{Arquitectura Final}
+% ============================================================
+
+La estructura NO debe modificarse durante el proyecto.
+
+\begin{lstlisting}[language=bash]
+hill_climb_ai/
+    main.py
+    config/
+        settings.py
+    game/
+        environment.py
+        terrain.py
+        vehicle.py
+        player.py
+        coin.py
+        checkpoint.py
+        physics.py
+        ui.py
+        camera.py
+    ai/
+        neural_network.py
+        genome.py
+        genetic_algorithm.py
+        trainer.py
+        reward_system.py
+    utils/
+        helpers.py
+        logger.py
+        math_utils.py
+    assets/
+        images/
+        fonts/
+    data/
+        saved_models/
+        statistics/
+    experiments/
+        physics_tests.ipynb
+        reward_tests.ipynb
+        plots.ipynb
+\end{lstlisting}
+
+% ============================================================
+\section{Responsabilidad de Cada Archivo}
+% ============================================================
+
+\subsection{main.py}
+
+\textbf{Responsabilidades:}
+\begin{itemize}
+    \item Inicializar \texttt{pygame} y crear ventana.
+    \item Parsear argumentos de línea de comandos (\texttt{--mode play|train|watch}, \texttt{--render true|false}).
+    \item Ejecutar el game loop principal.
+    \item Controlar FPS según el modo (60 en juego/observación, sin límite en entrenamiento headless).
+    \item Lanzar el entrenamiento llamando a \texttt{ai/trainer.py}.
+\end{itemize}
+
+\textbf{Prohibido:} crear lógica física, calcular recompensas, programar IA.
+
+\subsection{config/settings.py}
+
+Contiene únicamente constantes globales. Ningún import de otros módulos del proyecto.
+
+\begin{lstlisting}
+# === Ventana y rendering ===
+SCREEN_WIDTH = 1280
+SCREEN_HEIGHT = 720
+FPS = 60
+
+# === Fisica ===
+GRAVITY = 900           # px/s^2
+WHEEL_FRICTION = 1.5
+CHASSIS_MASS = 5.0
+WHEEL_MASS = 1.0
+
+# === Episodio ===
+MAX_TIME = 20.0         # segundos sin checkpoint -> muerte
+CHECKPOINT_TIME = 10.0  # segundos que anade un checkpoint
+TARGET_DISTANCE = 100   # px minimos para considerar avance
+
+# === Red neuronal ===
+NN_INPUTS = 14
+NN_HIDDEN = [16, 12]
+NN_OUTPUTS = 2
+LOOKAHEAD_DISTANCES = [30, 80, 150, 250]  # px frente al vehiculo
+
+# === Algoritmo genetico ===
+POPULATION_SIZE = 50
+ELITISM_COUNT = 3        # mejores individuos que pasan sin mutar
+MUTATION_RATE = 0.1      # probabilidad por peso
+MUTATION_SIGMA = 0.2     # desviacion estandar del ruido gaussiano
+TOURNAMENT_SIZE = 3
+CROSSOVER_RATE = 0.7
+
+# === Persistencia ===
+SAVE_EVERY_N_GEN = 5
+MODEL_DIR = "data/saved_models"
+STATS_DIR = "data/statistics"
+\end{lstlisting}
+
+\begin{notabox}
+Todas las magnitudes con unidad están comentadas. Esto es importante en física simulada: confundir píxeles/segundo con metros/segundo es la causa \#1 de comportamientos raros en pymunk.
+\end{notabox}
+
+\subsection{game/environment.py}
+
+Archivo central del juego. Orquesta todos los componentes.
+
+\textbf{Responsabilidades:}
+\begin{itemize}
+    \item Inicializar terreno, vehículo, jugador, monedas, checkpoints.
+    \item Llamar a \texttt{physics.py} para avanzar la simulación un \texttt{dt}.
+    \item Verificar condición de muerte (jugador toca el suelo o tiempo expirado).
+    \item Actualizar score y gestionar colecciones (monedas, checkpoints alcanzados).
+    \item Exponer \texttt{get\_state()} que devuelve el vector de 14 entradas para la IA.
+    \item Exponer \texttt{step(action)} (interfaz tipo Gym): recibe acción, avanza un frame, retorna \texttt{(state, reward, done, info)}.
+\end{itemize}
+
+\subsection{game/terrain.py}
+
+Generación del mapa.
+
+\textbf{Debe:}
+\begin{itemize}
+    \item Crear colinas y pendientes manteniendo continuidad.
+    \item Aceptar una \textbf{semilla} (seed) para reproducibilidad.
+    \item Exponer \texttt{height\_at(x)} para consultar altura del terreno en cualquier coordenada x (necesario para el lookahead de la red).
+    \item Exponer \texttt{slope\_at(x)} para consultar pendiente local.
+\end{itemize}
+
+\textbf{Primera versión:} terreno fijo (lista de puntos predefinida).\\
+\textbf{Versión posterior:} terreno procedural por funciones sinusoidales superpuestas (Perlin noise opcional).
+
+\begin{notabox}
+La semilla del terreno debe ser \textbf{idéntica para todos los individuos de una misma generación}. Si cada uno enfrenta un terreno distinto, el fitness no es comparable. Se cambia la semilla solo al pasar a la siguiente generación (o cada N generaciones).
+\end{notabox}
+
+\subsection{game/vehicle.py}
+
+Implementación física del vehículo en pymunk.
+
+\textbf{Debe contener:}
+\begin{itemize}
+    \item Chasis (cuerpo rígido rectangular).
+    \item Dos ruedas (cuerpos circulares unidos al chasis por articulaciones tipo \texttt{pin joint} o \texttt{groove joint}).
+    \item Motor en cada rueda con torque controlable.
+    \item Tracking de inclinación y velocidad angular del chasis.
+\end{itemize}
+
+\textbf{Interfaz mínima:}
+
+\begin{lstlisting}
+def accelerate(intensity: float) -> None: ...   # intensity in [0, 1]
+def brake(intensity: float) -> None: ...        # intensity in [0, 1]
+def update(dt: float) -> None: ...
+def get_telemetry() -> dict: ...                # vx, vy, angle, omega, contacts
+\end{lstlisting}
+
+\subsection{game/player.py}
+
+Representa al conductor encima del chasis.
+
+\textbf{Regla principal:} si el cuerpo del conductor toca el suelo, el episodio termina (\texttt{done = True}).
+
+Implementado como un cuerpo rígido pequeño unido al chasis por un \texttt{pivot joint} rígido. La colisión con el terreno se detecta usando \texttt{collision\_handlers} de pymunk.
+
+\subsection{game/coin.py}
+
+Cada moneda contiene:
+\begin{itemize}
+    \item \texttt{position}: (x, y) en coordenadas del mundo.
+    \item \texttt{value}: puntos otorgados al recogerla (por defecto 1).
+    \item \texttt{collected}: booleano.
+\end{itemize}
+
+Las monedas se distribuyen por el terreno con espaciado pseudo-aleatorio.
+
+\subsection{game/checkpoint.py}
+
+Cada checkpoint:
+\begin{itemize}
+    \item Agrega \texttt{CHECKPOINT\_TIME} segundos al contador del episodio.
+    \item Otorga una recompensa fija (\texttt{+200}).
+    \item Reinicia el contador de inactividad.
+\end{itemize}
+
+\subsection{game/physics.py}
+
+\textbf{Antes ambiguo, ahora con rol definido.}
+
+\textbf{Responsabilidades:}
+\begin{itemize}
+    \item Crear y mantener el \texttt{pymunk.Space} global.
+    \item Configurar gravedad, damping y constantes de simulación desde \texttt{settings.py}.
+    \item Exponer \texttt{step(dt)} que avanza la simulación.
+    \item Registrar \texttt{collision\_handlers} (vehículo-suelo, jugador-suelo, vehículo-moneda).
+\end{itemize}
+
+\textbf{Prohibido:} dibujar nada, contener lógica de juego.
+
+\subsection{game/ui.py}
+
+Renderiza información sobre la pantalla.
+
+\textbf{Mostrar:}
+\begin{itemize}
+    \item Score actual, generación, distancia, tiempo restante, mejor fitness histórico.
+    \item Mini-gráfica de evolución del fitness (opcional, post fase 6).
+\end{itemize}
+
+\textbf{También:} botones de acelerar/frenar (modo manual).
+
+\subsection{game/camera.py}
+
+Sigue al vehículo horizontalmente con un pequeño \textit{lerp} para suavizar.
+
+\textbf{NO debe contener lógica de juego.} Solo transformaciones de coordenadas mundo $\rightarrow$ pantalla.
+
+\subsection{ai/neural\_network.py}
+
+Red neuronal feedforward implementada en PyTorch.
+
+\textbf{Arquitectura:}
+
+\begin{center}
+14 entradas $\rightarrow$ 16 (tanh) $\rightarrow$ 12 (tanh) $\rightarrow$ 2 (sigmoide)
+\end{center}
+
+\textbf{Entradas (vector de 14 dimensiones):}
+
+\begin{enumerate}
+    \item Velocidad horizontal $v_x$ normalizada.
+    \item Velocidad vertical $v_y$ normalizada.
+    \item Ángulo del chasis $\theta$ (radianes, en $[-\pi, \pi]$).
+    \item Velocidad angular $\omega$.
+    \item Contacto rueda izquierda (0 o 1).
+    \item Contacto rueda derecha (0 o 1).
+    \item Altura terreno relativa a +30 px frente al vehículo.
+    \item Altura terreno relativa a +80 px.
+    \item Altura terreno relativa a +150 px.
+    \item Altura terreno relativa a +250 px.
+    \item Pendiente del terreno en la posición actual.
+    \item $\Delta x$ a moneda más cercana (normalizado).
+    \item $\Delta y$ a moneda más cercana (normalizado).
+    \item Tiempo restante normalizado (0 a 1).
+\end{enumerate}
+
+\textbf{Salidas:}
+\begin{enumerate}
+    \item Intensidad de aceleración (sigmoide, $[0, 1]$).
+    \item Intensidad de frenado (sigmoide, $[0, 1]$).
+\end{enumerate}
+
+\textbf{Importante:} la red debe crearse con \texttt{requires\_grad=False} en todos sus parámetros, y los forward passes envolverse en \texttt{torch.no\_grad()}.
+
+\begin{lstlisting}
+import torch
+import torch.nn as nn
+
+class PolicyNet(nn.Module):
+    def __init__(self, n_in=14, hidden=[16, 12], n_out=2):
+        super().__init__()
+        layers = []
+        prev = n_in
+        for h in hidden:
+            layers += [nn.Linear(prev, h), nn.Tanh()]
+            prev = h
+        layers += [nn.Linear(prev, n_out), nn.Sigmoid()]
+        self.net = nn.Sequential(*layers)
+        # Desactivar gradientes (no usamos backprop)
+        for p in self.parameters():
+            p.requires_grad = False
+
+    def forward(self, x):
+        with torch.no_grad():
+            return self.net(x)
+\end{lstlisting}
+
+\subsection{ai/genome.py}
+
+Un \texttt{Genome} es un individuo de la población. Contiene:
+\begin{itemize}
+    \item Su red neuronal (\texttt{PolicyNet}).
+    \item Su fitness (inicialmente 0).
+    \item Métodos: \texttt{get\_weights()}, \texttt{set\_weights(vector)}, \texttt{mutate()}, \texttt{copy()}.
+\end{itemize}
+
+Los pesos se manejan como un \textbf{vector plano (1D)} de NumPy para facilitar crossover y mutación. La conversión vector $\leftrightarrow$ red se hace con \texttt{torch.nn.utils.parameters\_to\_vector} y \texttt{vector\_to\_parameters}.
+
+\subsection{ai/genetic\_algorithm.py}
+
+Implementa los operadores evolutivos.
+
+\textbf{Selección:} torneo de tamaño \texttt{TOURNAMENT\_SIZE}.
+
+\textbf{Crossover:} uniforme, gen por gen (probabilidad 50\% de tomar el peso del padre A o B).
+
+\textbf{Mutación:} para cada peso, con probabilidad \texttt{MUTATION\_RATE}, sumar ruido gaussiano $\mathcal{N}(0, \sigma)$ con $\sigma = $ \texttt{MUTATION\_SIGMA}.
+
+\textbf{Elitismo:} los \texttt{ELITISM\_COUNT} mejores individuos pasan sin modificación a la siguiente generación. Esto evita perder al mejor genoma por mala suerte en crossover.
+
+\textbf{Nueva población:} elite + descendencia hasta completar \texttt{POPULATION\_SIZE}.
+
+\subsection{ai/trainer.py}
+
+Orquestador del entrenamiento.
+
+\begin{lstlisting}
+Crear poblacion inicial (o cargar desde disco)
+loop generaciones:
+    para cada genoma:
+        ejecutar episodio en environment
+        calcular fitness final
+    ordenar poblacion por fitness
+    guardar metricas
+    si generacion % SAVE_EVERY_N_GEN == 0:
+        guardar poblacion
+    aplicar operadores geneticos para crear siguiente generacion
+\end{lstlisting}
+
+\subsection{ai/reward\_system.py}
+
+Define la función de fitness del episodio.
+
+\textbf{Fitness final del episodio:}
+
+\[
+\text{fitness} = d_{\max} + 50 \cdot n_{\text{monedas}}
+\]
+
+donde $d_{\max}$ es la distancia horizontal máxima alcanzada y $n_{\text{monedas}}$ es la cantidad de monedas recogidas.
+
+\textbf{Recompensa instantánea (para debugging y análisis, no para el GA):}
+
+\begin{lstlisting}
+reward_step = 0
+reward_step += delta_distance * 0.1
+reward_step += 50  if coin_collected else 0
+reward_step += 200 if checkpoint_reached else 0
+reward_step -= 200 if player_touched_ground else 0
+\end{lstlisting}
+
+\begin{notabox}
+\textbf{Distinción clave:} las recompensas instantáneas (\texttt{reward\_step}) son útiles si después extiendes el proyecto a Q-learning o PPO. Para el algoritmo genético solo importa el \textbf{fitness final del episodio}, que es un único escalar por individuo.
+\end{notabox}
+
+\subsection{utils/helpers.py}
+
+Funciones de propósito general: conversión de coordenadas, normalización de vectores, clamp, lerp.
+
+\subsection{utils/logger.py}
+
+Logger del entrenamiento.
+
+\textbf{Responsabilidades:}
+\begin{itemize}
+    \item Escribir un \texttt{.csv} por generación con: generación, fitness máx, fitness medio, fitness mín, desviación estándar, mejor distancia, mejor cantidad de monedas.
+    \item Imprimir en consola un resumen formateado por generación.
+\end{itemize}
+
+\subsection{utils/math\_utils.py}
+
+Funciones matemáticas reusables: cálculo de pendiente discreta, distancia euclidiana, normalización min-max, clipping de ángulos a $[-\pi, \pi]$.
+
+% ============================================================
+\section{Persistencia}
+% ============================================================
+
+El entrenamiento NO puede perderse. El sistema debe ser robusto a cierres inesperados.
+
+\textbf{Qué guardar:}
+\begin{itemize}
+    \item Vector de pesos del mejor individuo (\texttt{best\_genome.pt}).
+    \item Población completa en formato pickle (\texttt{population\_gen\_N.pkl}).
+    \item Métricas históricas (\texttt{stats.csv}).
+    \item Número de generación actual.
+\end{itemize}
+
+\textbf{Estructura de carpetas:}
+
+\begin{lstlisting}[language=bash]
+data/
+    saved_models/
+        best_genome.pt
+        population_gen_5.pkl
+        population_gen_10.pkl
+        ...
+    statistics/
+        stats.csv
+\end{lstlisting}
+
+\textbf{Política de guardado:}
+
+\begin{lstlisting}
+if generation % SAVE_EVERY_N_GEN == 0:
+    save_population(generation)
+    save_best_genome()
+save_stats_row(generation, metrics)  # cada generacion
+\end{lstlisting}
+
+\textbf{Al iniciar:}
+
+\begin{lstlisting}
+if exists(latest_population_file):
+    population, start_gen = load_population()
+else:
+    population = create_random_population()
+    start_gen = 0
+\end{lstlisting}
+
+% ============================================================
+\section{Plan de Desarrollo}
+% ============================================================
+
+\subsection{FASE 1: Preparación}
+
+\textbf{Objetivo:} crear la estructura completa del proyecto.
+
+\textbf{Humano:}
+\begin{enumerate}
+    \item Crear repositorio y carpeta raíz.
+    \item Crear todas las subcarpetas y archivos vacíos según la arquitectura.
+    \item Crear entorno virtual e instalar librerías.
+    \item Inicializar git y hacer primer commit.
+\end{enumerate}
+
+\textbf{IA:} aún no programa. Solo verifica que la arquitectura esté correctamente creada.
+
+\textbf{Resultado esperado:} proyecto vacío pero perfectamente organizado.
+
+\subsection{FASE 2: Juego Manual}
+
+\textbf{Objetivo:} construir la simulación sin IA, jugable con teclado.
+
+\textbf{Orden estricto de implementación:}
+\begin{enumerate}
+    \item \texttt{config/settings.py} (constantes).
+    \item \texttt{game/physics.py} (Space de pymunk).
+    \item \texttt{game/terrain.py} (terreno fijo primero).
+    \item \texttt{game/vehicle.py} (chasis + ruedas + torque).
+    \item \texttt{game/player.py} (conductor + colisión con suelo).
+    \item \texttt{game/camera.py} (seguimiento horizontal).
+    \item \texttt{game/ui.py} (HUD básico).
+    \item \texttt{game/environment.py} (integración de todo).
+    \item \texttt{main.py} (game loop).
+\end{enumerate}
+
+\textbf{Regla obligatoria:} probar cada módulo antes de continuar al siguiente.
+
+\textbf{Resultado esperado:} se puede jugar manualmente con teclado (flechas izq/der o A/D), el vehículo se mueve sobre el terreno, la cámara sigue, y si el conductor toca el suelo el episodio termina.
+
+\subsection{FASE 3: Sistema de Recompensas}
+
+Añadir:
+\begin{itemize}
+    \item \texttt{game/coin.py} con distribución de monedas.
+    \item \texttt{game/checkpoint.py} con extensión de tiempo.
+    \item Score y tiempo en \texttt{ui.py}.
+    \item Esqueleto de \texttt{ai/reward\_system.py} (aún sin IA).
+\end{itemize}
+
+\textbf{Humano:} verificar manualmente que recoger monedas suma score, que pasar por checkpoints extiende tiempo, y que el episodio termina correctamente al agotar tiempo o tocar suelo.
+
+\textbf{Resultado esperado:} juego completo y funcional sin IA.
+
+\subsection{FASE 4: Estados de IA}
+
+Implementar en \texttt{environment.py} la función \texttt{get\_state()} que retorne el vector de 14 entradas.
+
+\textbf{Humano:} ejecutar el juego manualmente y graficar (en \texttt{experiments/plots.ipynb}) cómo varían las 14 variables a lo largo de un episodio. Verificar:
+\begin{itemize}
+    \item Que los rangos sean razonables (idealmente $[-1, 1]$ tras normalizar).
+    \item Que las variables de lookahead respondan correctamente al terreno.
+    \item Que los contactos de ruedas sean estables (no parpadeen).
+\end{itemize}
+
+\subsection{FASE 5: Red Neuronal}
+
+Implementar \texttt{ai/neural\_network.py} y \texttt{ai/genome.py}.
+
+\textbf{Prueba clave:} crear una red con pesos aleatorios, conectarla al juego, y verificar que el vehículo se mueva (caóticamente, pero se mueva).
+
+\textbf{Resultado esperado:} la IA controla el vehículo aunque sin aprender aún.
+
+\subsection{FASE 6: Algoritmo Genético}
+
+Implementar \texttt{ai/genetic\_algorithm.py} y \texttt{ai/trainer.py}.
+
+\textbf{Pruebas obligatorias:}
+\begin{itemize}
+    \item Ejecutar 5 generaciones cortas (población pequeña) y verificar que el fitness promedio aumente.
+    \item Graficar curva de evolución (mejor, promedio, peor por generación).
+    \item Verificar elitismo: el mejor individuo nunca empeora entre generaciones.
+\end{itemize}
+
+\textbf{Resultado esperado:} aprendizaje visible. Tras $\sim$30--50 generaciones la IA debe avanzar consistentemente.
+
+\subsection{FASE 7: Persistencia}
+
+Agregar guardado y carga en \texttt{trainer.py}.
+
+\textbf{Prueba de robustez:}
+\begin{enumerate}
+    \item Entrenar 20 generaciones.
+    \item Cerrar el programa.
+    \item Reiniciar: el entrenamiento debe continuar desde la generación 20.
+    \item Cargar el mejor genoma en modo \texttt{watch} y observar su desempeño.
+\end{enumerate}
+
+\subsection{FASE 8: Optimización y Extensiones (Opcional)}
+
+Funcionalidades opcionales para enriquecer el proyecto:
+
+\begin{itemize}
+    \item \textbf{Modo headless de entrenamiento.} Flag \texttt{--render=False} que desactive \texttt{pygame.display.update()}. Permite correr cientos de generaciones rápido y solo renderizar cuando se quiere observar.
+    \item \textbf{Evaluación en paralelo.} Múltiples vehículos en el mismo \texttt{pymunk.Space} con filtros de colisión (no chocan entre sí). Acelera enormemente la evaluación de la población.
+    \item \textbf{Terreno procedural.} Suma de sinusoides o Perlin noise con semilla controlada.
+    \item \textbf{NEAT (NeuroEvolution of Augmenting Topologies).} Evoluciona la topología además de los pesos. Más potente pero más complejo. Existe la librería \texttt{neat-python}, o se puede implementar desde cero como ejercicio.
+    \item \textbf{Obstáculos dinámicos} (rocas, rampas, gaps).
+    \item \textbf{Métricas avanzadas:} diversidad genética (varianza de pesos en la población), tasa de convergencia, análisis de neuronas más activas.
+    \item \textbf{Guardado automático del mejor video} (grabar el episodio del mejor genoma de cada generación con \texttt{imageio}).
+\end{itemize}
+
+% ============================================================
+\section{Reglas de Vibe Coding}
+% ============================================================
+
+Estas reglas son obligatorias y aplican a cada interacción con Claude Code.
+
+\textbf{Nunca pedir:}
+\begin{itemize}
+    \item ``Hazme todo el proyecto.''
+    \item ``Implementa varias fases a la vez.''
+\end{itemize}
+
+\textbf{Siempre pedir:}
+\begin{itemize}
+    \item ``Explícame cómo funciona X antes de implementarlo.''
+    \item ``Implementa solamente \texttt{terrain.py} usando la interfaz ya existente.''
+    \item ``Muéstrame un ejemplo mínimo de Y antes de integrarlo.''
+\end{itemize}
+
+\textbf{Reglas obligatorias:}
+\begin{enumerate}
+    \item \textbf{Un archivo por iteración.} Nunca dos a la vez.
+    \item \textbf{Integrar y probar antes de seguir.} Cada módulo nuevo se ejecuta y se verifica visualmente o con prints/asserts.
+    \item \textbf{Commit por módulo.} Cada archivo terminado y probado es un commit.
+    \item \textbf{Preguntar el ``por qué'' antes del ``cómo''.} Antes de copiar código generado, pedir que se explique la decisión de diseño.
+    \item \textbf{Comentarios pedagógicos.} Pedir a la IA que comente el código a nivel de aprendizaje, no solo a nivel de documentación.
+\end{enumerate}
+
+% ============================================================
+\section{Resultado Esperado}
+% ============================================================
+
+Al finalizar el proyecto se obtiene:
+
+\begin{itemize}
+    \item Un juego tipo Hill Climb funcional, jugable manualmente.
+    \item Una IA entrenada por neuroevolución capaz de avanzar consistentemente y recoger monedas.
+    \item Visualización en tiempo real del aprendizaje generación tras generación.
+    \item Guardado persistente del entrenamiento, robusto a reinicios.
+    \item Arquitectura modular y limpia, fácil de extender.
+    \item Notebooks de experimentos con gráficas de evolución del fitness.
+    \item Un proyecto sólido de portafolio en ciencia de datos / RL aplicado.
+\end{itemize}
+
+\vspace{2em}
+\hrule
+\vspace{0.5em}
+\noindent\textit{Documento revisado. Versión 2.0. Listo para la fase de implementación.}
+
+\end{document}
