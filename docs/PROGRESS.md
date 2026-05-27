@@ -4,11 +4,12 @@
 
 ## Último avance
 - Fecha: 2026-05-27
-- Archivo: `game/camera.py`
+- Archivo: `game/ui.py`
 - Estado: completado y verificado
-- Notas: lerp con LERP_FACTOR=5.0 en X e Y; camera.(x,y) es la esquina
-  superior-izquierda del mundo visible; world_to_screen y screen_to_world
-  verificadas con inversa exacta; convergencia gradual confirmada (no salto)
+- Notas: panel semitransparente (SRCALPHA) creado una vez en __init__;
+  5 filas con etiqueta + valor alineados; barra de tiempo con 3 colores
+  (verde >50%, amarillo 20-50%, rojo <20%); verificación visual diferida
+  hasta tener environment.py + main.py
 
 ## Siguiente paso
-- Implementar `game/ui.py` (HUD: score, distancia, tiempo)
+- Implementar `game/environment.py` (orquestador de todos los módulos)
