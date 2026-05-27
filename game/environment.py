@@ -361,9 +361,10 @@ class Environment:
         vx = max(-1.0, min(1.0, vel.x / _VX_NORM))
         vy = max(-1.0, min(1.0, vel.y / _VY_NORM))
 
-        # Entrada 2: ángulo — chassis.angle ya está en radianes.
-        # Dividir por π mapea [-π, π] → [-1, 1] exactamente, sin clamp.
-        angle = chassis.angle / math.pi
+        # Entrada 2: ángulo — chassis.angle acumula rotaciones sin límite.
+        # atan2(sin θ, cos θ) recupera el ángulo canónico en (-π, π] sin importar
+        # cuántas vueltas haya dado el cuerpo. Dividir por π → siempre en (-1, 1].
+        angle = math.atan2(math.sin(chassis.angle), math.cos(chassis.angle)) / math.pi
 
         # Entrada 3: velocidad angular — positivo = giro horario en pantalla
         omega = max(-1.0, min(1.0, chassis.angular_velocity / _OMEGA_NORM))

@@ -1,6 +1,6 @@
 # Progreso del proyecto
 
-## Fase actual: 4 — Estados de IA
+## Fase actual: 4 — Estados de IA ✅ (completada 2026-05-27)
 
 ## Fase 1 — Preparación ✅ (completada por el usuario)
 
@@ -58,6 +58,46 @@ Estructura de carpetas, entorno virtual, dependencias instaladas, git inicializa
 
 ---
 
+## Fase 4 — Estados de IA ✅ (completada 2026-05-27)
+
+### Archivos modificados
+| Archivo | Estado | Notas |
+|---|---|---|
+| `game/physics.py` | ✅ | Contacto ruedas: pre_solve handler, register_wheel_shapes(), flags back/front_wheel_on_ground |
+| `game/environment.py` | ✅ | get_state() completa: 14 entradas normalizadas + atan2 fix |
+| `experiments/plots.ipynb` | ✅ | 5 celdas: setup headless, recolección, gráfica agrupada, estadísticas |
+
+### get_state() — 14 entradas (índices 0-13)
+| # | Variable | Normalización | Notas |
+|---|---|---|---|
+| 0 | vx | / 600 px/s | velocidad horizontal chasis |
+| 1 | vy | / 600 px/s | velocidad vertical chasis |
+| 2 | ángulo | atan2(sin, cos) / π | siempre en (-1, 1] — fix necesario por acumulación |
+| 3 | omega | / 10 rad/s | velocidad angular |
+| 4 | contacto trasero | 0.0 / 1.0 | flag via pre_solve en physics.py |
+| 5 | contacto delantero | 0.0 / 1.0 | flag via pre_solve en physics.py |
+| 6-9 | lookaheads +30/80/150/250 px | / 200 px | altura relativa al suelo actual |
+| 10 | pendiente | / 0.5 | slope_at(chassis_x) |
+| 11 | dx moneda | / 1280 px | horizontal a moneda más cercana |
+| 12 | dy moneda | / 400 px | vertical a moneda más cercana |
+| 13 | tiempo norm. | / MAX_TIME | clamp [0, 1] |
+
+### Verificación (plots.ipynb, seed=42, siempre acelerar, 1200 frames)
+- Distancia: 6331 px, Score: 19 monedas recogidas
+- vx, omega, lookaheads, pendiente, dy: nunca saturan ✅
+- ángulo: fix atan2 aplicado → min=-0.999, max=0.997, sat%=0.6% ✅
+- rueda trasera/delantera: saturación ~50% es esperada (valores binarios 0/1) ✅
+- tiempo norm.: saturación ~91% es esperada (vehicle cruza todos los checkpoints) ✅
+- vy: 38% saturación → _VY_NORM podría subirse a 900; no crítico para Fase 5 ⚠️
+- dx moneda: 43% saturación → _COIN_X_NORM podría subirse; no crítico para Fase 5 ⚠️
+
+### Bug corregido
+- **Ángulo no acotado:** `chassis.angle / math.pi` podía superar ±1 si el vehículo se
+  inclinaba > 180°. Fix: `math.atan2(math.sin(chassis.angle), math.cos(chassis.angle)) / math.pi`.
+  pymunk acumula el ángulo sin límite; atan2 recupera el canónico en (-π, π] siempre.
+
+---
+
 ## Deuda técnica — Fase 8
 
 ### Comportamiento de checkpoints: acumular vs. resetear
@@ -82,10 +122,10 @@ terreno procedural cuál produce mejor comportamiento de aprendizaje.
 
 ## Último avance
 - Fecha: 2026-05-27
-- Archivos: `game/coin.py`, `game/checkpoint.py`, `ai/reward_system.py`, `game/environment.py`
-- Estado: Fase 3 completada y verificada visualmente
+- Archivos: `game/physics.py`, `game/environment.py`, `experiments/plots.ipynb`
+- Estado: Fase 4 completada — get_state() con 14 entradas normalizadas, verificada con gráficas
 
 ## Siguiente paso
-- Fase 4: implementar `get_state()` en `game/environment.py`
-  - 14 entradas según sección 4.11 del plan maestro
-  - Verificar rangos en `experiments/plots.ipynb`
+- Fase 5: implementar `ai/neural_network.py` y `ai/genome.py`
+  - Red 14→16(tanh)→12(tanh)→2(sigmoid) sin gradientes (neuroevolución)
+  - Pesos como vector plano: parameters_to_vector / vector_to_parameters
