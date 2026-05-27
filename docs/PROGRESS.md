@@ -1,6 +1,6 @@
 # Progreso del proyecto
 
-## Fase actual: 5 — Red Neuronal 🔄 (en curso, 2026-05-27)
+## Fase actual: 5 — Red Neuronal ✅ (completada 2026-05-27)
 
 ## Fase 1 — Preparación ✅ (completada por el usuario)
 
@@ -128,7 +128,8 @@ terreno procedural cuál produce mejor comportamiento de aprendizaje.
 | Archivo | Estado | Notas |
 |---|---|---|
 | `ai/neural_network.py` | ✅ | PolicyNet 14→16(tanh)→12(tanh)→2(sigmoid), sin gradientes |
-| `ai/genome.py` | ⬜ | Pendiente |
+| `ai/genome.py` | ✅ | Genome con mutate(), copy(), forward() sin torch en la interfaz |
+| `main.py` | ✅ | Modo `--mode random_ai` añadido; red controla el vehículo en tiempo real |
 
 ### PolicyNet — detalles
 - Arquitectura construida dinámicamente desde `NN_INPUTS`, `NN_HIDDEN`, `NN_OUTPUTS` en `settings.py`.
@@ -142,8 +143,12 @@ terreno procedural cuál produce mejor comportamiento de aprendizaje.
 
 ## Último avance
 - Fecha: 2026-05-27
-- Archivo: `ai/neural_network.py`
-- Estado: PolicyNet implementada y lista para verificación
+- Archivos: `ai/neural_network.py`, `ai/genome.py`, `main.py`
+- Estado: Fase 5 completada — red neuronal controla el vehículo en tiempo real con `--mode random_ai`
 
 ## Siguiente paso
-- `ai/genome.py`: clase Genome que encapsula PolicyNet + fitness + operadores evolutivos
+- Fase 6: `ai/genetic_algorithm.py`
+  - Selección por torneo (TOURNAMENT_SIZE=3)
+  - Crossover uniforme (50% por peso)
+  - Mutación gaussiana (ya en Genome.mutate())
+  - Elitismo: top ELITISM_COUNT=3 pasan sin modificar

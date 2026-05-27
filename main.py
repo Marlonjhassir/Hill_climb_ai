@@ -14,8 +14,10 @@ Prohibido: contener física, lógica de IA, dibujar directamente.
 import argparse
 import sys
 
+import numpy as np
 import pygame
 
+from ai.genome import Genome
 from config.settings import FPS, SCREEN_HEIGHT, SCREEN_WIDTH
 from game.environment import Environment
 
@@ -38,9 +40,13 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--mode",
-        choices=["play", "train"],
+        choices=["play", "train", "random_ai"],
         default="play",
-        help="'play' para control manual, 'train' para IA (Fase 6).",
+        help=(
+            "'play' para control manual, "
+            "'random_ai' para ver una red con pesos aleatorios, "
+            "'train' para entrenamiento neuroevolutivo (Fase 6)."
+        ),
     )
     parser.add_argument(
         "--seed",
@@ -112,6 +118,12 @@ def main() -> None:
 
     env = Environment(seed=args.seed)
 
+    # En modo random_ai, un Genome con pesos Kaiming aleatorios controla el vehículo.
+    # El estado del frame anterior se guarda aquí para alimentar la red en el siguiente.
+    # El primer frame usa ceros (el vehículo aún no se ha movido).
+    genome: Genome | None = Genome() if args.mode == "random_ai" else None
+    current_state: np.ndarray = np.zeros(14, dtype=np.float32)
+
     # Acumulador para la pausa al final del episodio
     reset_timer: float = 0.0
     waiting_reset: bool = False
@@ -146,19 +158,31 @@ def main() -> None:
                 env.reset()
                 waiting_reset = False
                 reset_timer = 0.0
+                # El nuevo episodio empieza con estado desconocido: reseteamos
+                # a ceros para que la red no reciba valores del episodio anterior.
+                current_state = np.zeros(14, dtype=np.float32)
             # Renderizamos el último frame durante la pausa para que la
             # pantalla no quede en negro; el jugador ve la posición final.
             env.render(surface)
             pygame.display.flip()
             continue   # saltamos el step normal hasta que se reinicie
 
-        # Paso 4: leer teclado → construir acción
-        keys = pygame.key.get_pressed()
-        action = _build_action(keys)
+        # Paso 4: construir acción — teclado en modo 'play', red en 'random_ai'.
+        if genome is not None:
+            # La red recibe el estado del frame anterior y devuelve (accel, brake).
+            # genome.forward() retorna np.ndarray (2,); env.step() acepta cualquier
+            # iterable de dos floats, así que no hace falta conversión explícita.
+            action = genome.forward(current_state)
+        else:
+            keys = pygame.key.get_pressed()
+            action = _build_action(keys)
 
-        # Paso 5: avanzar la física un frame
-        # Ignoramos state y reward por ahora (stubs hasta Fases 4 y 3).
-        _state, _reward, done, _info = env.step(action, dt)
+        # Paso 5: avanzar la física un frame y capturar el nuevo estado.
+        state, _reward, done, _info = env.step(action, dt)
+
+        # Guardamos el estado para el próximo frame (solo lo usa random_ai,
+        # pero actualizarlo siempre no tiene costo apreciable).
+        current_state = np.array(state, dtype=np.float32)
 
         # Paso 6: dibujar el frame sobre la surface
         env.render(surface)
