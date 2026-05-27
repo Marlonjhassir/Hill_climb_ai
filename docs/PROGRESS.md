@@ -4,12 +4,12 @@
 
 ## Último avance
 - Fecha: 2026-05-27
-- Archivo: `game/vehicle.py`
+- Archivo: `game/player.py`
 - Estado: completado y verificado
-- Notas: chasis (Poly.create_box, CHASSIS_MASS), dos ruedas (Circle, WHEEL_MASS),
-  PivotJoint para suspensión rígida, SimpleMotor con tracción 100% trasera y 60%
-  delantera; contactos como flags públicos que environment.py actualiza;
-  spawn_y calculado como height_at(x) - WHEEL_OFFSET_Y - WHEEL_RADIUS
+- Notas: body pequeño (20x30 px, 0.8 kg) encima del chasis; PivotJoint fija
+  posición + GearJoint(ratio=1) sincroniza rotación; friction=0 en shape para
+  no interferir en el frame de colisión; COLLISION_PLAYER activa el flag
+  player_touched_ground en physics.py
 
 ## Siguiente paso
-- Implementar `game/player.py` (conductor + colisión con suelo)
+- Implementar `game/camera.py` (seguimiento horizontal con lerp)
