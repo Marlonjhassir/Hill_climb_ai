@@ -32,3 +32,6 @@ CROSSOVER_RATE = 0.7
 SAVE_EVERY_N_GEN = 5
 MODEL_DIR = "data/saved_models"
 STATS_DIR = "data/statistics"
+
+# === Terreno procedural (Fase 8) ===
+TERRAIN_SEED_DEFAULT = 42   # semilla si no se pasa --seed

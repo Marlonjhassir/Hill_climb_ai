@@ -37,6 +37,11 @@ from game.vehicle import (
 # Posición horizontal de spawn del vehículo (coordenadas mundo)
 SPAWN_X: float = 100.0
 
+# Paso de muestreo para el render del terreno (px en coordenadas mundo).
+# A 10 px el render es suave (28 muestras por ciclo de la onda más corta)
+# y genera ~130 puntos para un viewport de 1280 px — costo mínimo de CPU.
+_TERRAIN_RENDER_STEP: int = 10
+
 # Monedas: una cada _COIN_SPACING px, desde _COIN_START_X hasta x=4000
 _COIN_SPACING: int = 200   # px entre monedas consecutivas
 _COIN_START_X: int = 400   # primera moneda (deja margen libre en la zona de spawn)
@@ -193,6 +198,12 @@ class Environment:
         # Cuántos px avanzó max_distance en el frame más reciente.
         # Se inicializa en 0; step() lo actualiza antes de llamar a _compute_reward().
         self._delta_distance: float = 0.0
+
+        # Metadatos de la sesión de entrenamiento para el HUD.
+        # En modo manual o random_ai quedan en sus valores por defecto (1 y 0.0).
+        # En modo watch o train, el llamador los actualiza antes del primer render.
+        self.generation:    int   = 1
+        self.best_fitness:  float = 0.0
 
         # Monedas: dict shape → Coin para búsqueda O(1) en los callbacks de colisión.
         # Cuando una moneda se recoge en step(), se elimina del dict Y del Space.
@@ -452,29 +463,46 @@ class Environment:
             score=self.score,
             distance=max(0.0, self.max_distance),
             time_left=self.time_left,
+            generation=self.generation,
+            best_fitness=self.best_fitness,
         )
 
     def _render_terrain(self, surface: pygame.Surface) -> None:
         """
         Dibuja el suelo: relleno sólido + línea de superficie.
 
-        Convierte los puntos del terreno (mundo) a pantalla y construye:
-          - Un polígono de relleno que va desde el primer punto, por toda
-            la superficie, hasta el último, y cierra por el borde inferior.
-          - Una línea más oscura sobre la superficie para distinguirla.
+        Muestrea height_at(x) a lo largo del viewport visible en lugar de
+        iterar sobre una lista fija de puntos. El muestreo dinámico es
+        necesario porque el terreno procedural no tiene puntos predefinidos.
+
+        El margen de un paso a cada lado garantiza que el polígono de relleno
+        empiece y termine ligeramente fuera de pantalla, eliminando cualquier
+        corte visible en los bordes del viewport.
         """
+        # Coordenada mundo del borde izquierdo de la pantalla = camera.x.
+        # Añadimos un paso de margen a cada lado para evitar cortes.
+        world_left  = max(0.0, self._camera.x - _TERRAIN_RENDER_STEP)
+        world_right = self._camera.x + SCREEN_WIDTH + _TERRAIN_RENDER_STEP
+
+        # Muestrear height_at() en el rango visible y convertir a pantalla.
+        # range() necesita enteros; int() trunca, que es suficiente para el render.
+        world_xs = range(
+            int(world_left),
+            int(world_right) + _TERRAIN_RENDER_STEP,
+            _TERRAIN_RENDER_STEP,
+        )
         screen_pts = [
-            (int(x), int(y))
-            for x, y in (
-                self._camera.world_to_screen(wx, wy)
-                for wx, wy in self._terrain.points
+            (int(sx), int(sy))
+            for sx, sy in (
+                self._camera.world_to_screen(float(wx), self._terrain.height_at(float(wx)))
+                for wx in world_xs
             )
         ]
 
         if len(screen_pts) < 2:
             return
 
-        # Polígono de relleno: cierra el suelo hasta el borde inferior
+        # Polígono de relleno: cierra el suelo hasta el borde inferior de pantalla.
         fill_poly = (
             [(screen_pts[0][0], SCREEN_HEIGHT)]
             + screen_pts
@@ -482,7 +510,7 @@ class Environment:
         )
         pygame.draw.polygon(surface, _GROUND_FILL, fill_poly)
 
-        # Línea de superficie encima del relleno
+        # Línea de superficie encima del relleno.
         for i in range(len(screen_pts) - 1):
             pygame.draw.line(
                 surface, _GROUND_LINE,

@@ -189,10 +189,16 @@ def main() -> None:
         # así que si llegamos aquí el genoma está garantizado.
         genome, fitness, generation = _load_best_genome()
 
+        # El checkpoint almacena generation en base 0 (gen 4 = 5ª generación).
+        # El HUD usa base 1, así que sumamos 1 para que coincida con lo que
+        # el usuario ve en los logs de entrenamiento ("Gen 0" = primera).
+        env.generation   = generation + 1
+        env.best_fitness = fitness
+
         # Actualizamos el título de la ventana con los metadatos del genoma,
         # para que el usuario sepa qué generación y fitness está observando.
         pygame.display.set_caption(
-            f"Hill Climb AI — watch | gen {generation} | fitness {fitness:.0f}"
+            f"Hill Climb AI — watch | gen {generation + 1} | fitness {fitness:.0f}"
         )
 
     else:

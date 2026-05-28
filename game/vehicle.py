@@ -28,7 +28,7 @@ CHASSIS_HEIGHT = 35     # px — alto del chasis
 WHEEL_OFFSET_X = 45     # px — separación horizontal entre centro del chasis y eje de rueda
 WHEEL_OFFSET_Y = 22     # px — las ruedas cuelgan bajo el centro del chasis (Y↓ positivo)
 
-MOTOR_MAX_FORCE   = 50000  # kg·px/s² — torque máximo que puede aplicar el motor
+MOTOR_MAX_FORCE   = 120000 # kg·px/s² — torque máximo que puede aplicar el motor
 ACCELERATION_RATE = 15.0   # rad/s — velocidad angular objetivo al acelerar al 100%
 BRAKE_RATE        = 8.0    # rad/s — velocidad angular objetivo al frenar al 100%
 

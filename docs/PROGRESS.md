@@ -1,6 +1,6 @@
 # Progreso del proyecto
 
-## Fase actual: 7 — Persistencia 🔄 (en curso, 2026-05-28)
+## Fase actual: 8 — Generalización del entorno y demo visual 🔄 (en curso, 2026-05-28)
 
 ## Fase 1 — Preparación ✅ (completada por el usuario)
 
@@ -224,18 +224,92 @@ terreno procedural cuál produce mejor comportamiento de aprendizaje.
 - stats.csv tiene 10 filas de datos + 1 cabecera (7+3 gens) ✅
 - CSV acumula correctamente entre sesiones ✅
 
-### Pendiente en Fase 7
-- Modo `--mode watch` en `main.py`: cargar `best_genome.pt` y ver el mejor genoma jugando en tiempo real.
+### Modo watch — detalles
+- `_load_best_genome()` en `main.py`: carga `best_genome.pt`, reconstruye `Genome` con `set_weights()`, devuelve (genome, fitness, generation).
+- `env.generation` y `env.best_fitness` expuestos como atributos públicos en `environment.py`; `render()` los pasa a `ui.draw()`.
+- HUD muestra GENERACION y MEJOR FIT correctamente en todos los modos.
+- Título de ventana: `"Hill Climb AI — watch | gen N | fitness XXXX"`.
+
+### Verificación completa de Fase 7
+- Checkpoint guardado y cargado correctamente (7 gens + reanudación en gen 5) ✅
+- Pesos restaurados idénticos tras ciclo guardar/cargar ✅
+- CSV acumula filas entre sesiones ✅
+- Modo watch carga el mejor genoma y lo muestra jugando ✅
+- HUD muestra GENERACION: 5 y MEJOR FIT: 6503 en modo watch ✅
+
+---
+
+---
+
+## Fase 8 — Generalización del entorno y demo visual 🔄 (en curso, 2026-05-28)
+
+### Sub-fases
+
+| Sub-fase | Descripción | Estado |
+|---|---|---|
+| 8.0 | Actualización del plan maestro (.tex) | ✅ |
+| 8.1 | Terreno procedural (terrain.py) | ✅ |
+| 8.2 | Obstáculos horneados (terrain.py) | ⬜ |
+| 8.3 | Reset de checkpoint + espaciado progresivo | ⬜ |
+| 8.4 | Modo demo (--mode demo en main.py) | ⬜ |
+
+### Sub-fase 8.0 — Actualización del .tex ✅
+
+Secciones actualizadas en `docs/plan_hill_climb_ai.tex`:
+- Sección 4.1 (main.py): añadido `--mode demo`.
+- Sección 4.2 (settings.py): añadido bloque de constantes Fase 8 con `TERRAIN_SEED_DEFAULT = 42`.
+- Sección 4.3 (environment.py): documentado espaciado progresivo (sub-fase 8.3).
+- Sección 4.4 (terrain.py): documentado diseño procedural con suma de sinusoides.
+- Sección 4.8 (checkpoint.py): documentada decisión D2 (reset en lugar de acumulación).
+- Sección 6.8 (FASE 8): reescrita con cuatro sub-fases y decisiones D1-D4.
+
+### Sub-fase 8.1 — Terreno procedural ✅
+
+#### Archivos modificados
+
+| Archivo | Cambio |
+|---|---|
+| `config/settings.py` | Añadido `TERRAIN_SEED_DEFAULT = 42` |
+| `game/terrain.py` | Reescritura completa: terreno procedural por suma de sinusoides |
+| `game/environment.py` | `_render_terrain()` ahora muestrea `height_at(x)` en el viewport |
+
+#### Diseño de terrain.py
+
+- **Técnica:** suma de 4 sinusoides con fases aleatorias seedeadas vía `np.random.default_rng(seed)`.
+- **Ondas:** macro-A (T=2200, A=70), macro-B (T=1400, A=50), medium (T=700, A=25), micro (T=280, A=10).
+- **Zona plana:** `x ∈ [0, 400]` devuelve siempre `y = 500`.
+- **Dificultad creciente:** factor lineal de 1× (x=400) a 3× (x=3400), fijo más allá.
+- **Dominio abierto:** `height_at(x)` válido para cualquier `x ≥ 0`.
+- **Física:** segmentos pymunk muestreados cada 20 px hasta x=5000.
+- **Render:** muestreo dinámico cada 10 px en el viewport visible (sin lista fija).
+- **slope_at():** diferenciación numérica centrada con ε=1 px (error O(ε²) despreciable).
+
+#### Notebook de verificación
+
+`experiments/terrain_profile.ipynb` — 4 celdas:
+1. Setup headless (SDL_VIDEODRIVER=dummy).
+2. Muestreo de height_at() para x ∈ [0, 5000] con dos semillas.
+3. Gráfica de perfiles (muestra zona plana, dificultad creciente, meseta máxima).
+4. Verificación de determinismo (dos instancias con el mismo seed → diff=0).
+
+#### Ajustes post-verificación
+
+| Archivo | Cambio | Razón |
+|---|---|---|
+| `game/terrain.py` | `amp_factor` arranca en 0 (no en 1×) en x=400 | Transición suave desde zona plana; colina inicial demasiado abrupta |
+| `game/terrain.py` | `_MAX_AMP_FACTOR` 3.0 → 2.0 | Cap de pendiente máxima teórica ≈ 60° (antes podía llegar a ~69°) |
+| `game/vehicle.py` | `MOTOR_MAX_FORCE` 80 000 → 120 000 | Potencia suficiente para superar pendientes de hasta ~55° |
+
+**Nota:** con terreno procedural los checkpoints anteriores son inválidos. Se reentrenará desde cero a partir de sub-fase 8.3.
 
 ---
 
 ## Último avance
 - Fecha: 2026-05-28
-- Archivos: `ai/trainer.py` (persistencia)
-- Estado: Fase 7 parte 1/2 completada — guardado/carga robusto verificado
+- Archivos: `docs/plan_hill_climb_ai.tex`, `config/settings.py`, `game/terrain.py`, `game/environment.py`, `experiments/terrain_profile.ipynb`, `game/vehicle.py`
+- Estado: sub-fases 8.0 y 8.1 completadas — terreno procedural + motor ajustado para pendientes crecientes
 
 ## Siguiente paso
-- Fase 7 parte 2: modo `--mode watch` en `main.py`
-  - Cargar `best_genome.pt` desde disco
-  - Ver el mejor genoma entrenado jugando en tiempo real
-  - Prueba final de robustez: entrenar 20 gen → cerrar → reiniciar → observar en modo watch
+- Sub-fase 8.2: obstáculos horneados en `game/terrain.py` (ondas de alta frecuencia que simulan rocas y rampas).
+- Sub-fase 8.3: reset de checkpoint + espaciado progresivo de monedas y checkpoints.
+- Sub-fase 8.4: modo demo (`--mode demo` en `main.py`).

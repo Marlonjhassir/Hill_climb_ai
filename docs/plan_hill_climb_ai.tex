@@ -165,7 +165,11 @@ hill_climb_ai/
 \textbf{Responsabilidades:}
 \begin{itemize}
     \item Inicializar \texttt{pygame} y crear ventana.
-    \item Parsear argumentos de línea de comandos (\texttt{--mode play|train|watch}, \texttt{--render true|false}).
+    \item Parsear argumentos de línea de comandos (\texttt{--mode play|train|watch|demo},
+          \texttt{--seed N}).
+    \item \textbf{Modo demo} (sub-fase 8.4): arranca siempre en generación 0, sin
+          persistencia, y renderiza en tiempo real cómo mejora la población generación
+          tras generación. Su único fin es observar la evolución; no guarda ni carga nada.
     \item Ejecutar el game loop principal.
     \item Controlar FPS según el modo (60 en juego/observación, sin límite en entrenamiento headless).
     \item Lanzar el entrenamiento llamando a \texttt{ai/trainer.py}.
@@ -212,6 +216,14 @@ CROSSOVER_RATE = 0.7
 SAVE_EVERY_N_GEN = 5
 MODEL_DIR = "data/saved_models"
 STATS_DIR = "data/statistics"
+
+# === Terreno procedural (Fase 8) ===
+TERRAIN_SEED_DEFAULT = 42    # semilla si no se pasa --seed
+# Las constantes de dificultad y espaciado se fijan en sub-fase 8.3:
+# TERRAIN_FLAT_ZONE        = 400   # px de zona plana en el spawn
+# TERRAIN_AMP_SCALE        = 3000  # distancia (px) hasta dificultad maxima
+# COIN_BASE_SPACING        = 200   # px entre monedas en zona inicial
+# CHECKPOINT_BASE_SPACING  = 700   # px entre checkpoints en zona inicial
 \end{lstlisting}
 
 \begin{notabox}
@@ -232,6 +244,10 @@ Archivo central del juego. Orquesta todos los componentes.
     \item Exponer \texttt{step(action)} (interfaz tipo Gym): recibe acción, avanza un frame, retorna \texttt{(state, reward, done, info)}.
 \end{itemize}
 
+\textbf{Sub-fase 8.3:} el espaciado de monedas y checkpoints crece con la
+distancia al origen. Las monedas lejanas están más separadas entre sí, lo que
+incentiva al agente a seguir avanzando en lugar de girar cerca del spawn.
+
 \subsection{game/terrain.py}
 
 Generación del mapa.
@@ -244,8 +260,26 @@ Generación del mapa.
     \item Exponer \texttt{slope\_at(x)} para consultar pendiente local.
 \end{itemize}
 
-\textbf{Primera versión:} terreno fijo (lista de puntos predefinida).\\
-\textbf{Versión posterior:} terreno procedural por funciones sinusoidales superpuestas (Perlin noise opcional).
+\textbf{Fase 2 (implementada):} terreno fijo con 21 puntos predefinidos.
+\texttt{height\_at(x)} usa \texttt{np.interp} sobre esa lista; dominio limitado a
+$x \in [0,\,4100]$.
+
+\textbf{Fase 8.1 (procedural):} la clase \texttt{Terrain} pasa a generación
+procedural por suma de sinusoides con semilla configurable. Propiedades del nuevo
+diseño:
+\begin{itemize}
+    \item \textbf{Dominio abierto:} \texttt{height\_at(x)} válido para cualquier
+          $x \geq 0$; sin límite derecho.
+    \item \textbf{Zona plana de spawn preservada:} $x \in [0,\,400]$ retorna
+          siempre $y = 500$, garantizando normal 100\,\% vertical al nacer.
+    \item \textbf{Dificultad creciente:} la amplitud de las sinusoides escala
+          suavemente con $x$, produciendo colinas más pronunciadas a mayor distancia.
+    \item \textbf{Semilla configurable:} \texttt{Terrain(space, seed)} acepta
+          cualquier entero; por defecto usa \texttt{TERRAIN\_SEED\_DEFAULT}.
+          Misma semilla $\Rightarrow$ mismo perfil siempre.
+    \item \textbf{Renderizado dinámico:} \texttt{render()} muestrea
+          \texttt{height\_at(x)} a lo largo del viewport visible, sin lista fija.
+\end{itemize}
 
 \begin{notabox}
 La semilla del terreno debe ser \textbf{idéntica para todos los individuos de una misma generación}. Si cada uno enfrenta un terreno distinto, el fitness no es comparable. Se cambia la semilla solo al pasar a la siguiente generación (o cada N generaciones).
@@ -295,9 +329,15 @@ Las monedas se distribuyen por el terreno con espaciado pseudo-aleatorio.
 
 Cada checkpoint:
 \begin{itemize}
-    \item Agrega \texttt{CHECKPOINT\_TIME} segundos al contador del episodio.
-    \item Otorga una recompensa fija (\texttt{+200}).
-    \item Reinicia el contador de inactividad.
+    \item \textbf{Comportamiento adoptado (Fase 8.3, decisión D2):}
+          \texttt{time\_left = MAX\_TIME} al cruzarlo --- reset completo, no
+          acumulación. Obliga al agente a alcanzar el siguiente checkpoint antes
+          de que el contador llegue a cero; incentiva avance continuo.
+    \item Otorga una recompensa fija (\texttt{+200}) al \texttt{reward\_system}.
+    \item \textit{Nota histórica:} las Fases 2--7 acumulaban tiempo
+          (\texttt{time\_left += CHECKPOINT\_TIME}). El reset se adopta
+          formalmente en sub-fase 8.3 junto con el terreno procedural, donde
+          el impacto en el aprendizaje es mayor.
 \end{itemize}
 
 \subsection{game/physics.py}
@@ -623,18 +663,84 @@ Agregar guardado y carga en \texttt{trainer.py}.
     \item Cargar el mejor genoma en modo \texttt{watch} y observar su desempeño.
 \end{enumerate}
 
-\subsection{FASE 8: Optimización y Extensiones (Opcional)}
+\subsection{FASE 8: Generalización del entorno y demo visual}
 
-Funcionalidades opcionales para enriquecer el proyecto:
+\textbf{Objetivo:} hacer que la IA aprenda en un entorno variado en lugar de un
+único terreno fijo, introducir obstáculos de dificultad creciente, corregir la
+deuda técnica del checkpoint y añadir un modo de visualización de la evolución
+en tiempo real.
+
+Esta fase se divide en cuatro sub-fases, cada una implementada en una sesión
+separada. El cambio de terreno fijo a procedural invalida los checkpoints
+anteriores; se reentrenará desde cero.
+
+\subsubsection*{Sub-fase 8.0 --- Actualización del plan maestro}
+
+Actualizar \texttt{docs/plan\_hill\_climb\_ai.tex} para reflejar las decisiones
+de Fase 8 antes de tocar código. Sin cambios en ningún archivo fuente.
+
+\subsubsection*{Sub-fase 8.1 --- Terreno procedural}
+
+\textbf{Archivo:} \texttt{game/terrain.py}.
+
+Reemplazar el terreno fijo por generación procedural mediante suma de
+sinusoides con semilla configurable. Requisitos:
+\begin{itemize}
+    \item Dominio abierto (\texttt{height\_at(x)} para cualquier $x \geq 0$).
+    \item Zona plana de spawn preservada ($x \in [0,\,400]$).
+    \item Dificultad creciente: amplitud de ondas escala con la distancia.
+    \item Semilla configurable; por defecto \texttt{TERRAIN\_SEED\_DEFAULT}.
+    \item Renderizado dinámico por muestreo del viewport.
+\end{itemize}
+
+\textbf{Decisión D1:} los obstáculos (rocas, rampas) se hornean en la función de
+altura como componentes de alta frecuencia. No se añaden cuerpos físicos
+separados ni entradas nuevas a la red neuronal.
+
+\textbf{Decisión D4:} todos los individuos de una misma generación usan la misma
+semilla de terreno. La semilla puede variar o permanecer fija entre generaciones
+(decisión operativa, configurable desde \texttt{settings.py}).
+
+\textbf{Reentrenamiento:} el cambio de terreno fijo a procedural invalida
+checkpoints anteriores. Se entrena desde cero.
+
+\subsubsection*{Sub-fase 8.2 --- Obstáculos horneados}
+
+\textbf{Archivo:} \texttt{game/terrain.py}.
+
+Añadir a la suma de sinusoides componentes de alta frecuencia que simulan:
+\begin{itemize}
+    \item \textbf{Rocas:} bumps de alta amplitud y longitud de onda corta.
+    \item \textbf{Rampas:} pendientes pronunciadas en zona de dificultad alta.
+\end{itemize}
+
+Las 14 entradas de la red no cambian; los lookaheads y la pendiente ya capturan
+esta información.
+
+\subsubsection*{Sub-fase 8.3 --- Reset de checkpoint y espaciado progresivo}
+
+\textbf{Archivos:} \texttt{game/checkpoint.py}, \texttt{game/environment.py}.
 
 \begin{itemize}
-    \item \textbf{Modo headless de entrenamiento.} Flag \texttt{--render=False} que desactive \texttt{pygame.display.update()}. Permite correr cientos de generaciones rápido y solo renderizar cuando se quiere observar.
-    \item \textbf{Evaluación en paralelo.} Múltiples vehículos en el mismo \texttt{pymunk.Space} con filtros de colisión (no chocan entre sí). Acelera enormemente la evaluación de la población.
-    \item \textbf{Terreno procedural.} Suma de sinusoides o Perlin noise con semilla controlada.
-    \item \textbf{NEAT (NeuroEvolution of Augmenting Topologies).} Evoluciona la topología además de los pesos. Más potente pero más complejo. Existe la librería \texttt{neat-python}, o se puede implementar desde cero como ejercicio.
-    \item \textbf{Obstáculos dinámicos} (rocas, rampas, gaps).
-    \item \textbf{Métricas avanzadas:} diversidad genética (varianza de pesos en la población), tasa de convergencia, análisis de neuronas más activas.
-    \item \textbf{Guardado automático del mejor video} (grabar el episodio del mejor genoma de cada generación con \texttt{imageio}).
+    \item \textbf{Decisión D2:} \texttt{time\_left = MAX\_TIME} al cruzar un
+          checkpoint (reset, no acumulación). Resuelve la deuda técnica
+          documentada en \texttt{docs/PROGRESS.md}.
+    \item Espaciado de monedas y checkpoints crece con la distancia al origen,
+          incentivando avance continuo en el terreno procedural.
+\end{itemize}
+
+\subsubsection*{Sub-fase 8.4 --- Modo demo}
+
+\textbf{Archivo:} \texttt{main.py}.
+
+\textbf{Decisión D3:} modo efímero, sin persistencia, arranca siempre en
+generación 0. Renderiza visualmente cómo evoluciona la población generación
+tras generación.
+
+\begin{itemize}
+    \item \texttt{--mode demo}: game loop controlado por el \texttt{Trainer}.
+    \item Cada generación, el mejor individuo se visualiza jugando en tiempo real.
+    \item No guarda ni carga nada en disco.
 \end{itemize}
 
 % ============================================================
