@@ -21,7 +21,7 @@ NN_OUTPUTS = 2
 LOOKAHEAD_DISTANCES = [30, 80, 150, 250] # px frente al vehiculo
 
 # === Algoritmo genetico ===
-POPULATION_SIZE = 50
+POPULATION_SIZE = 10
 ELITISM_COUNT = 3       # mejores individuos que pasan sin mutar
 MUTATION_RATE = 0.1     # probabilidad por peso
 MUTATION_SIGMA = 0.2    # desviacion estandar del ruido gaussiano

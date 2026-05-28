@@ -19,6 +19,7 @@ import numpy as np
 import pygame
 import torch
 
+from ai.genetic_algorithm import GeneticAlgorithm
 from ai.genome import Genome
 from config.settings import FPS, MODEL_DIR, SCREEN_HEIGHT, SCREEN_WIDTH
 from game.environment import Environment
@@ -42,13 +43,14 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--mode",
-        choices=["play", "train", "random_ai", "watch"],
+        choices=["play", "train", "random_ai", "watch", "demo"],
         default="play",
         help=(
             "'play' para control manual, "
             "'random_ai' para ver una red con pesos aleatorios, "
             "'watch' para ver el mejor genoma entrenado (carga best_genome.pt), "
-            "'train' para entrenamiento neuroevolutivo."
+            "'train' para entrenamiento neuroevolutivo, "
+            "'demo' para visualizar la evolución generación a generación (sin persistencia)."
         ),
     )
     parser.add_argument(
@@ -136,6 +138,140 @@ def _load_best_genome() -> tuple[Genome, float, int]:
     return genome, fitness, generation
 
 
+def _run_demo(
+    surface: pygame.Surface,
+    clock:   pygame.time.Clock,
+    seed:    int,
+) -> None:
+    """
+    Modo demo: entrena y visualiza el mejor genoma de cada generación.
+
+    Ciclo por generación:
+      1. Entrenamiento headless — todos los individuos juegan seed fijo, sin render.
+      2. Visualización del mejor genoma con render a 60 FPS hasta fin de episodio.
+      3. Pausa de _RESET_DELAY_S segundos (igual que los otros modos).
+      4. Evolucionar la población y volver al paso 1.
+
+    Por qué seed fijo para todas las generaciones:
+        Permite observar cómo el MISMO terreno se conquista progresivamente
+        mejor a lo largo del tiempo. Si el seed cambiara cada gen, sería
+        imposible saber si el agente mejoró o simplemente tuvo más suerte
+        con un terreno más fácil.
+
+    Sin persistencia: no guarda checkpoints, no carga nada de disco.
+    Arranca siempre desde la generación 0.
+
+    Args:
+        surface: Surface principal de pygame (ya inicializada).
+        clock:   Clock para regular los FPS durante la visualización.
+        seed:    Semilla del terreno. Pasar --seed N desde CLI para variarla.
+    """
+    # Paso de tiempo FIJO para el entrenamiento.
+    # A diferencia del DT variable de clock.tick(), el DT fijo garantiza que
+    # el mismo genoma produce el mismo resultado en cualquier ejecución.
+    _DT        = 1.0 / FPS
+    _MAX_STEPS = 10_000    # tope de seguridad por episodio (~167 s a 60 FPS)
+
+    ga         = GeneticAlgorithm()
+    population = ga.initialize()
+
+    # Dos entornos distintos para separar la fase rápida (sin render)
+    # de la fase visual (con render). Cada uno tiene su propio Space pymunk.
+    env_train = Environment(seed=seed)   # resetea por individuo, nunca renderiza
+    env_show  = Environment(seed=seed)   # resetea por generación, renderiza a 60 FPS
+
+    gen = 0
+
+    while True:
+        # ----------------------------------------------------------------
+        # Fase 1 — Entrenamiento headless
+        # ----------------------------------------------------------------
+        pygame.display.set_caption(
+            f"Hill Climb AI — demo | entrenando gen {gen + 1}  "
+            f"({len(population)} individuos)..."
+        )
+
+        for genome in population:
+            # Vaciar la cola de eventos una vez por individuo.
+            # Sin esto el SO marca la ventana como "(No responde)" en ~5 s.
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    sys.exit()
+
+            env_train.reset(seed=seed)
+            state = env_train.get_state()
+
+            for _ in range(_MAX_STEPS):
+                action = genome.forward(state)
+                state, _, done, _ = env_train.step(action, _DT)
+                if done:
+                    break
+
+            # Misma fórmula que Trainer (sección 7.4 de CLAUDE.md)
+            genome.fitness = env_train.max_distance + 50.0 * env_train.score
+
+        # Recoger métricas ANTES de evolve(), que resetea fitness a 0.
+        fitnesses = [g.fitness for g in population]
+        best      = max(population, key=lambda g: g.fitness)
+        best_fit  = best.fitness
+        avg_fit   = sum(fitnesses) / len(fitnesses)
+
+        print(
+            f"[demo] Gen {gen + 1:>3} | "
+            f"mejor: {best_fit:>8.1f} | "
+            f"promedio: {avg_fit:>8.1f}"
+        )
+
+        # ----------------------------------------------------------------
+        # Fase 2 — Visualización del mejor genoma
+        # ----------------------------------------------------------------
+        env_show.reset(seed=seed)
+        env_show.generation   = gen + 1
+        env_show.best_fitness = best_fit
+        pygame.display.set_caption(
+            f"Hill Climb AI — demo | gen {gen + 1} | fitness {best_fit:.0f}"
+        )
+
+        current_state: np.ndarray = np.zeros(14, dtype=np.float32)
+        waiting_reset: bool       = False
+        reset_timer:   float      = 0.0
+
+        # Bucle de visualización: corre hasta que la pausa post-episodio expira.
+        while True:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    sys.exit()
+
+            dt_ms = clock.tick(FPS)
+            dt    = dt_ms / 1000.0
+
+            if waiting_reset:
+                reset_timer += dt
+                if reset_timer >= _RESET_DELAY_S:
+                    break  # pausa completada → pasar a la siguiente generación
+                env_show.render(surface)
+                pygame.display.flip()
+                continue
+
+            action = best.forward(current_state)
+            new_state, _, done, _ = env_show.step(action, dt)
+            current_state = np.array(new_state, dtype=np.float32)
+
+            env_show.render(surface)
+            pygame.display.flip()
+
+            if done:
+                waiting_reset = True
+
+        # ----------------------------------------------------------------
+        # Fase 3 — Evolucionar y repetir
+        # ----------------------------------------------------------------
+        population = ga.evolve()
+        gen += 1
+
+
 def main() -> None:
     """
     Game loop principal. Inicializa pygame, corre el juego y sale limpiamente.
@@ -168,6 +304,13 @@ def main() -> None:
     # y devuelve los milisegundos reales transcurridos (puede ser > 1000/FPS
     # si el CPU estuvo ocupado con otra tarea).
     clock = pygame.time.Clock()
+
+    # El modo demo tiene su propio bucle completo (entrena + visualiza).
+    # Lo despachamos aquí, antes de crear el env del juego normal, para no
+    # ejecutar código innecesario (env, genome, etc.) que demo no necesita.
+    if args.mode == "demo":
+        _run_demo(surface, clock, seed=args.seed)
+        return
 
     env = Environment(seed=args.seed)
 

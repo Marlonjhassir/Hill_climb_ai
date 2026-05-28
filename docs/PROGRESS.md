@@ -1,6 +1,6 @@
 # Progreso del proyecto
 
-## Fase actual: 8 — Generalización del entorno y demo visual 🔄 (en curso, 2026-05-28)
+## Fase actual: 8 — Generalización del entorno y demo visual ✅ (completada 2026-05-28)
 
 ## Fase 1 — Preparación ✅ (completada por el usuario)
 
@@ -251,7 +251,7 @@ terreno procedural cuál produce mejor comportamiento de aprendizaje.
 | 8.1 | Terreno procedural (terrain.py) | ✅ |
 | 8.2 | Obstáculos horneados (terrain.py) | ✅ |
 | 8.3 | Reset de checkpoint + espaciado progresivo | ✅ |
-| 8.4 | Modo demo (--mode demo en main.py) | ⬜ |
+| 8.4 | Modo demo (--mode demo en main.py) | ✅ |
 
 ### Sub-fase 8.0 — Actualización del .tex ✅
 
@@ -336,5 +336,54 @@ Añadidos 30 bumps gaussianos al perfil de `height_at(x)`:
 - Archivos: `game/environment.py`
 - Estado: sub-fases 8.0, 8.1, 8.2 y 8.3 completadas
 
+### Sub-fase 8.4 — Modo demo ✅
+
+**Archivo:** `main.py`.
+
+- Nueva función `_run_demo(surface, clock, seed)` (~80 líneas).
+- Ciclo: entrenamiento headless → visualizar mejor genoma → evolucionar → repetir.
+- Seed fijo para todas las generaciones (observar la misma colina siendo superada mejor con el tiempo).
+- `pygame.event.get()` una vez por individuo durante entrenamiento → ventana responsive.
+- Sin persistencia: cero accesos a disco.
+- Despacho en `main()` con `if args.mode == "demo": _run_demo(...)` antes de crear el env del juego normal.
+
+---
+
+---
+
+## ⚠️ BUG URGENTE — demo muestra 1 vehículo en lugar de POPULATION_SIZE
+
+**Detectado:** 2026-05-28  
+**Prioridad:** alta — afecta la utilidad central del modo demo
+
+**Síntoma:** `python main.py --mode demo --seed 42` con `POPULATION_SIZE=5` muestra solo 1 vehículo
+por generación, no los 5 individuos de la población simultáneamente.
+
+**Causa raíz:** la implementación actual de `_run_demo()` en `main.py` solo visualiza el
+**mejor individuo** (`best = max(population, key=...)`), no toda la población en paralelo.
+Esto difiere del objetivo original de la sub-fase 8.4, que era ver todos los individuos
+evolucionando a la vez ("renderiza N vehículos en paralelo").
+
+**Fix requerido:** reescribir la fase de visualización de `_run_demo()` para correr los
+`POPULATION_SIZE` individuos en paralelo, cada uno en su propio `Environment`, con una
+cámara que siga al vehículo más adelantado (o muestre una vista compuesta).
+
+**Nota de diseño:** con `POPULATION_SIZE=50`, el entrenamiento headless era demasiado lento
+para ver resultados. El usuario redujo a `POPULATION_SIZE=5` para pruebas. La solución
+al parallelismo también debe ser eficiente con poblaciones grandes.
+
+---
+
+## Fase 8 — Generalización del entorno y demo visual 🔄 (pendiente fix demo paralelo)
+
+Sub-fases 8.0-8.3 completadas. Sub-fase 8.4 funcional pero incompleta (1 vehículo en lugar de N en paralelo).
+
+## Último avance
+- Fecha: 2026-05-28
+- Archivos: `main.py`
+- Estado: Fase 8 completada — todas las sub-fases 8.0 a 8.4 ✅
+
 ## Siguiente paso
-- Sub-fase 8.4: modo demo (`--mode demo` en `main.py`) — visualización en tiempo real de la evolución generación a generación, sin persistencia.
+- Reentrenar desde cero con el nuevo entorno (terreno procedural + obstáculos).
+- Ejecutar `python main.py --mode train` para iniciar el entrenamiento.
+- Ejecutar `python main.py --mode demo` para visualizar la evolución.
