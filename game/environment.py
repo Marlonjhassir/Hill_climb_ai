@@ -19,7 +19,7 @@ import pymunk
 
 from ai.reward_system import compute_reward
 from config.settings import (
-    CHECKPOINT_TIME, LOOKAHEAD_DISTANCES, MAX_TIME, SCREEN_HEIGHT, SCREEN_WIDTH,
+    LOOKAHEAD_DISTANCES, MAX_TIME, SCREEN_HEIGHT, SCREEN_WIDTH,
 )
 from game.camera import Camera
 from game.checkpoint import Checkpoint, CHECKPOINT_HEIGHT, CHECKPOINT_WIDTH
@@ -42,12 +42,26 @@ SPAWN_X: float = 100.0
 # y genera ~130 puntos para un viewport de 1280 px — costo mínimo de CPU.
 _TERRAIN_RENDER_STEP: int = 10
 
-# Monedas: una cada _COIN_SPACING px, desde _COIN_START_X hasta x=4000
-_COIN_SPACING: int = 200   # px entre monedas consecutivas
-_COIN_START_X: int = 400   # primera moneda (deja margen libre en la zona de spawn)
+# ---------------------------------------------------------------------------
+# Monedas — espaciado progresivo (sub-fase 8.3)
+# ---------------------------------------------------------------------------
+# spacing(x) = _COIN_SPACING_INITIAL + (x / 1000) × _COIN_SPACING_STEP
+# Ejemplo: x=400 → spacing≈212 px  |  x=5000 → spacing≈350 px
+# Las zonas difíciles tienen más espacio entre monedas → mayor incentivo para avanzar.
+_COIN_START_X:         float = 400.0   # primera moneda (deja margen libre en spawn)
+_COIN_X_MAX:           float = 9500.0  # generar monedas hasta aquí
+_COIN_SPACING_INITIAL: float = 200.0   # px entre monedas en la zona inicial
+_COIN_SPACING_STEP:    float = 30.0    # px adicionales por cada 1000 px recorridos
 
-# Posiciones X de los 5 checkpoints, distribuidos a lo largo del terreno (~4 km)
-_CHECKPOINT_X_POSITIONS: tuple[int, ...] = (700, 1400, 2100, 2800, 3500)
+# ---------------------------------------------------------------------------
+# Checkpoints — espaciado progresivo (sub-fase 8.3)
+# ---------------------------------------------------------------------------
+# spacing(x) = _CHECKPOINT_SPACING_INITIAL + (x / 1000) × _CHECKPOINT_SPACING_STEP
+# Ejemplo: puerta 1 en x=700  |  puerta 4 en x≈3758  |  puerta 7 en x≈9042
+_CHECKPOINT_X_START:         float = 1000.0   # posición del primer checkpoint
+_CHECKPOINT_X_MAX:           float = 9500.0  # generar checkpoints hasta aquí
+_CHECKPOINT_SPACING_INITIAL: float = 700.0   # espaciado inicial entre checkpoints
+_CHECKPOINT_SPACING_STEP:    float = 400.0   # px adicionales por cada 1000 px recorridos
 
 # ---------------------------------------------------------------------------
 # Constantes de normalización para get_state()
@@ -209,20 +223,30 @@ class Environment:
         # Cuando una moneda se recoge en step(), se elimina del dict Y del Space.
         # Así _coin_map.values() siempre representa solo las monedas activas.
         self._coin_map: dict[pymunk.Shape, Coin] = {}
-        for x in range(_COIN_START_X, 4001, _COIN_SPACING):
+        coin_x = _COIN_START_X
+        while coin_x <= _COIN_X_MAX:
             # La moneda flota COIN_Y_OFFSET px sobre el suelo.
             # height_at() devuelve la Y del suelo (Y crece hacia abajo), así que
             # restar COIN_Y_OFFSET mueve la moneda hacia arriba en pantalla.
-            coin_y = self._terrain.height_at(float(x)) - COIN_Y_OFFSET
-            coin = Coin(space, x=float(x), y=coin_y)
+            coin_y = self._terrain.height_at(coin_x) - COIN_Y_OFFSET
+            coin = Coin(space, x=coin_x, y=coin_y)
             self._coin_map[coin.shape] = coin
+            # Espaciado creciente: en zonas difíciles las monedas están más separadas.
+            # Esto incentiva al agente a avanzar en vez de quedarse cerca de las primeras.
+            spacing = _COIN_SPACING_INITIAL + (coin_x / 1000.0) * _COIN_SPACING_STEP
+            coin_x += spacing
 
         # Checkpoints: mismo patrón dict shape → Checkpoint que las monedas.
         self._checkpoint_map: dict[pymunk.Shape, Checkpoint] = {}
-        for x in _CHECKPOINT_X_POSITIONS:
-            terrain_y = self._terrain.height_at(float(x))
-            cp = Checkpoint(space, x=float(x), terrain_y=terrain_y)
+        cp_x = _CHECKPOINT_X_START
+        while cp_x <= _CHECKPOINT_X_MAX:
+            terrain_y = self._terrain.height_at(cp_x)
+            cp = Checkpoint(space, x=cp_x, terrain_y=terrain_y)
             self._checkpoint_map[cp.shape] = cp
+            # Espaciado creciente: los checkpoints lejanos están más separados,
+            # lo que exige al agente avanzar más para reponer el tiempo.
+            spacing = _CHECKPOINT_SPACING_INITIAL + (cp_x / 1000.0) * _CHECKPOINT_SPACING_STEP
+            cp_x += spacing
 
     # ------------------------------------------------------------------
     # Loop de simulación
@@ -293,9 +317,11 @@ class Environment:
                 # collect() elimina la shape del Space (la protección anti-doble
                 # está en Checkpoint.collect, que además marca _active = False).
                 cp.collect(space)
-                # Añadir el bono ANTES de decrementar el tiempo garantiza que el
-                # jugador vea el cambio en la misma iteración que cruzó la puerta.
-                self.time_left += CHECKPOINT_TIME
+                # Reset completo del tiempo (decisión D2, sub-fase 8.3).
+                # time_left = MAX_TIME en lugar de time_left += CHECKPOINT_TIME.
+                # Esto obliga al agente a alcanzar el siguiente checkpoint antes
+                # de que el contador llegue a cero — el tiempo no se acumula.
+                self.time_left = MAX_TIME
 
         # Paso 4: actualizar estado del episodio
 

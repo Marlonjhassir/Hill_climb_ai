@@ -250,7 +250,7 @@ terreno procedural cuál produce mejor comportamiento de aprendizaje.
 | 8.0 | Actualización del plan maestro (.tex) | ✅ |
 | 8.1 | Terreno procedural (terrain.py) | ✅ |
 | 8.2 | Obstáculos horneados (terrain.py) | ✅ |
-| 8.3 | Reset de checkpoint + espaciado progresivo | ⬜ |
+| 8.3 | Reset de checkpoint + espaciado progresivo | ✅ |
 | 8.4 | Modo demo (--mode demo en main.py) | ⬜ |
 
 ### Sub-fase 8.0 — Actualización del .tex ✅
@@ -320,11 +320,21 @@ Añadidos 30 bumps gaussianos al perfil de `height_at(x)`:
 
 ---
 
+### Sub-fase 8.3 — Reset de checkpoint + espaciado progresivo ✅
+
+**Archivo:** `game/environment.py`.
+
+- **Reset de tiempo (D2):** `time_left = MAX_TIME` al cruzar checkpoint (antes `+= CHECKPOINT_TIME`). `CHECKPOINT_TIME` eliminado del import.
+- **Monedas progresivas:** bucle `while` con `spacing = 200 + (x/1000)×30`. ~26 monedas hasta x=9500.
+- **Checkpoints progresivos:** bucle `while` con `spacing = 1000 + (x/1000)×400`. ~7 checkpoints hasta x=9500.
+- Constantes obsoletas `_COIN_SPACING`, `_CHECKPOINT_X_POSITIONS` reemplazadas por `_COIN_SPACING_INITIAL/STEP` y `_CHECKPOINT_SPACING_INITIAL/STEP`.
+
+---
+
 ## Último avance
 - Fecha: 2026-05-28
-- Archivos: `game/terrain.py`
-- Estado: sub-fases 8.0, 8.1 y 8.2 completadas
+- Archivos: `game/environment.py`
+- Estado: sub-fases 8.0, 8.1, 8.2 y 8.3 completadas
 
 ## Siguiente paso
-- Sub-fase 8.3: reset de checkpoint + espaciado progresivo de monedas y checkpoints.
-- Sub-fase 8.4: modo demo (`--mode demo` en `main.py`).
+- Sub-fase 8.4: modo demo (`--mode demo` en `main.py`) — visualización en tiempo real de la evolución generación a generación, sin persistencia.
