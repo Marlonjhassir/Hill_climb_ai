@@ -1,6 +1,6 @@
 # Progreso del proyecto
 
-## Fase actual: 6 — Algoritmo Genético ✅ (completada 2026-05-28)
+## Fase actual: 7 — Persistencia 🔄 (en curso, 2026-05-28)
 
 ## Fase 1 — Preparación ✅ (completada por el usuario)
 
@@ -143,12 +143,13 @@ terreno procedural cuál produce mejor comportamiento de aprendizaje.
 
 ---
 
-## Fase 6 — Algoritmo Genético ✅ (completada 2026-05-28)
+## Fase 6 — Algoritmo Genético 🔄 (en curso, 2026-05-28)
 
 ### Archivos implementados
 | Archivo | Estado | Notas |
 |---|---|---|
 | `ai/genetic_algorithm.py` | ✅ | Torneo, crossover uniforme, elitismo |
+| `ai/trainer.py` | ✅ | Orquestador headless: loop de generaciones, fitness, log |
 
 ### Detalles de GeneticAlgorithm
 - `initialize()` — crea 50 `Genome` con pesos Kaiming aleatorios.
@@ -156,21 +157,85 @@ terreno procedural cuál produce mejor comportamiento de aprendizaje.
 - `_tournament_select()` — `random.sample` sin repetición, gana el de mayor fitness.
 - `_crossover(a, b)` — `np.where(mask, w_a, w_b)` con mask 50%; activa con prob. `CROSSOVER_RATE=0.7`.
 
-### Verificación
+### Verificación de genetic_algorithm.py
 - Población inicial de 50, todos con fitness=0.0 ✅
 - `evolve()` produce exactamente 50 individuos con fitness reseteado ✅
 - Pesos del mejor individuo preservados en los 3 élites ✅
 - Crossover: cuando no se activa (prob. 30%), hijo = copia de parent_a ✅
 
+### Verificación de trainer.py (5 generaciones, 50 individuos)
+- Fitness promedio: 156 → 728 → 1505 → 2810 → 4192 (crecimiento sostenido) ✅
+- Mejor fitness: monotónicamente no-decreciente en todas las generaciones ✅
+- Peor fitness Gen 4 = 130 (en generaciones previas era 0): la población mejora ✅
+- Gráfica de evolución guardada en `experiments/evolution_curve.png` ✅
+
+---
+
+---
+
+## Fase 6 — Algoritmo Genético ✅ (completada 2026-05-28)
+
+### Archivos implementados
+| Archivo | Estado | Notas |
+|---|---|---|
+| `ai/genetic_algorithm.py` | ✅ | Torneo, crossover uniforme, elitismo |
+| `ai/trainer.py` | ✅ | Orquestador headless: loop de generaciones, fitness, log |
+
+### Detalles de GeneticAlgorithm
+- `initialize()` — crea 50 `Genome` con pesos Kaiming aleatorios.
+- `evolve()` — ordena por fitness, copia los 3 mejores (elitismo, fitness reset), completa con torneo + crossover + mutación.
+- `_tournament_select()` — `random.sample` sin repetición, gana el de mayor fitness.
+- `_crossover(a, b)` — `np.where(mask, w_a, w_b)` con mask 50%; activa con prob. `CROSSOVER_RATE=0.7`.
+
+### Verificación de genetic_algorithm.py
+- Población inicial de 50, todos con fitness=0.0 ✅
+- `evolve()` produce exactamente 50 individuos con fitness reseteado ✅
+- Pesos del mejor individuo preservados en los 3 élites ✅
+- Crossover: cuando no se activa (prob. 30%), hijo = copia de parent_a ✅
+
+### Verificación de trainer.py (5 generaciones, 50 individuos)
+- Fitness promedio: 156 → 728 → 1505 → 2810 → 4192 (crecimiento sostenido) ✅
+- Mejor fitness: monotónicamente no-decreciente en todas las generaciones ✅
+- Peor fitness Gen 4 = 130 (en generaciones previas era 0): la población mejora ✅
+- Gráfica de evolución guardada en `experiments/evolution_curve.png` ✅
+
+---
+
+## Fase 7 — Persistencia 🔄 (en curso, 2026-05-28)
+
+### Archivos modificados
+| Archivo | Estado | Notas |
+|---|---|---|
+| `ai/trainer.py` | ✅ (1/2) | Persistencia implementada — falta modo watch en main.py |
+
+### Persistencia en trainer.py — detalles
+- `_ensure_dirs()` — crea `data/saved_models/` y `data/statistics/` si no existen.
+- `_save_checkpoint(gen, population)` — escritura atómica (.tmp → os.replace) de:
+  - `population_gen_N.pkl`: list[dict] con `{'weights': np.ndarray, 'fitness': float}` por individuo.
+  - `best_genome.pt`: dict con tensor de pesos, fitness y número de generación.
+- `_load_checkpoint()` — carga el pkl de mayor N; reconstruye Genome con `Genome() + set_weights()`; captura toda excepción y arranca limpio si hay corrupción.
+- `_latest_checkpoint_gen()` — escanea MODEL_DIR con `glob("population_gen_*.pkl")`.
+- `_save_stats_row(stats)` — append a `stats.csv` cada generación; cabecera solo si archivo nuevo.
+- `train()` modificado: reanuda desde checkpoint si existe; usa `range(start_gen, start_gen + n_generations)`.
+
+### Verificación de persistencia (7 gens + reanudación 3 gens)
+- Segunda sesión arranca en gen 5 (cargado population_gen_4.pkl) ✅
+- Pesos restaurados idénticos tras ciclo guardar/cargar ✅
+- stats.csv tiene 10 filas de datos + 1 cabecera (7+3 gens) ✅
+- CSV acumula correctamente entre sesiones ✅
+
+### Pendiente en Fase 7
+- Modo `--mode watch` en `main.py`: cargar `best_genome.pt` y ver el mejor genoma jugando en tiempo real.
+
 ---
 
 ## Último avance
 - Fecha: 2026-05-28
-- Archivo: `ai/genetic_algorithm.py`
-- Estado: Fase 6 completada — operadores evolutivos verificados
+- Archivos: `ai/trainer.py` (persistencia)
+- Estado: Fase 7 parte 1/2 completada — guardado/carga robusto verificado
 
 ## Siguiente paso
-- Fase 7: `ai/trainer.py` — orquestador del entrenamiento
-  - Loop de generaciones: evaluar → fitness → evolve
-  - Persistencia: guardar mejor genoma y población completa
-  - Logger: imprimir métricas por generación en consola
+- Fase 7 parte 2: modo `--mode watch` en `main.py`
+  - Cargar `best_genome.pt` desde disco
+  - Ver el mejor genoma entrenado jugando en tiempo real
+  - Prueba final de robustez: entrenar 20 gen → cerrar → reiniciar → observar en modo watch
