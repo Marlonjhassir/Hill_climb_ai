@@ -249,7 +249,7 @@ terreno procedural cuál produce mejor comportamiento de aprendizaje.
 |---|---|---|
 | 8.0 | Actualización del plan maestro (.tex) | ✅ |
 | 8.1 | Terreno procedural (terrain.py) | ✅ |
-| 8.2 | Obstáculos horneados (terrain.py) | ⬜ |
+| 8.2 | Obstáculos horneados (terrain.py) | ✅ |
 | 8.3 | Reset de checkpoint + espaciado progresivo | ⬜ |
 | 8.4 | Modo demo (--mode demo en main.py) | ⬜ |
 
@@ -297,19 +297,34 @@ Secciones actualizadas en `docs/plan_hill_climb_ai.tex`:
 | Archivo | Cambio | Razón |
 |---|---|---|
 | `game/terrain.py` | `amp_factor` arranca en 0 (no en 1×) en x=400 | Transición suave desde zona plana; colina inicial demasiado abrupta |
-| `game/terrain.py` | `_MAX_AMP_FACTOR` 3.0 → 2.0 | Cap de pendiente máxima teórica ≈ 60° (antes podía llegar a ~69°) |
+| `game/terrain.py` | `_MAX_AMP_FACTOR` 3.0 → 1.7 | Cap de pendiente máxima teórica ≈ 57° (antes podía llegar a ~69°) |
 | `game/vehicle.py` | `MOTOR_MAX_FORCE` 80 000 → 120 000 | Potencia suficiente para superar pendientes de hasta ~55° |
+| `game/terrain.py` | '_PHYS_X_MAX' 5000.0 - 10000.0 |
+Aumenta el terreno generado para lograr un mayor score
 
 **Nota:** con terreno procedural los checkpoints anteriores son inválidos. Se reentrenará desde cero a partir de sub-fase 8.3.
 
 ---
 
+### Sub-fase 8.2 — Obstáculos horneados ✅
+
+**Archivo:** `game/terrain.py` (única modificación).
+
+Añadidos 30 bumps gaussianos al perfil de `height_at(x)`:
+- **Fórmula:** `height = BASE_Y + sinusoides - Σ bump_j·exp(-((x-x_j)/σ)²)`
+- Las rocas son offsets negativos → terreno sube → protrusions visibles
+- Posiciones y amplitudes aleatorias, seedeadas con el mismo RNG que las ondas
+- Parámetros: `_OBSTACLE_START_X=1500`, `_OBSTACLE_COUNT=30`, `A∈[12,40]px`, `σ=35px`
+- Pendiente máxima de un bump: `A/(σ√(2e)) ≈ 40/57.6 ≈ 0.69 px/px ≈ 35°`
+- Sin cambios en `environment.py`, red neuronal ni inputs de la IA
+
+---
+
 ## Último avance
 - Fecha: 2026-05-28
-- Archivos: `docs/plan_hill_climb_ai.tex`, `config/settings.py`, `game/terrain.py`, `game/environment.py`, `experiments/terrain_profile.ipynb`, `game/vehicle.py`
-- Estado: sub-fases 8.0 y 8.1 completadas — terreno procedural + motor ajustado para pendientes crecientes
+- Archivos: `game/terrain.py`
+- Estado: sub-fases 8.0, 8.1 y 8.2 completadas
 
 ## Siguiente paso
-- Sub-fase 8.2: obstáculos horneados en `game/terrain.py` (ondas de alta frecuencia que simulan rocas y rampas).
 - Sub-fase 8.3: reset de checkpoint + espaciado progresivo de monedas y checkpoints.
 - Sub-fase 8.4: modo demo (`--mode demo` en `main.py`).

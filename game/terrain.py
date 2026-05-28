@@ -74,16 +74,41 @@ _PHYS_SAMPLE_STEP: int = 20
 # superarlo; 10000 px cubre con margen una sesión de entrenamiento completa.
 _PHYS_X_MAX: float = 10000.0
 
+# ---------------------------------------------------------------------------
+# Constantes de obstáculos — sub-fase 8.2
+# ---------------------------------------------------------------------------
+# Los obstáculos son "rocas": campanas gaussianas negativas en la función de
+# altura. Un valor negativo REDUCE y en ese punto, lo que en coordenadas
+# pygame (Y↓) significa que el terreno sube → protrusion visible en pantalla.
+#
+# Elección gaussiana vs. cuerpo físico separado (decisión D1):
+#   - Gaussiana: gratis en rendimiento, la misma lógica de render/física/IA
+#     la detecta sin modificación. La IA ve los bumps a través del lookahead.
+#   - Cuerpo separado: requeriría shapes adicionales, handlers de colisión
+#     extra y 2 entradas nuevas a la red. Innecesariamente complejo.
+#
+# Pendiente máxima de un bump con amp=A, σ=W: max_slope = A / (W·√(2e)) ≈ A/2.33W
+#   Con A=40, W=35: max_slope ≈ 0.49 px/px ≈ 26° — cuesta arriba pero superable.
+_OBSTACLE_START_X: float = 1500.0  # px — primer obstáculo a partir de aquí
+_OBSTACLE_COUNT:   int   = 30      # número de obstáculos distribuidos hasta _PHYS_X_MAX
+_OBSTACLE_AMP_MIN: float = 12.0   # px — altura mínima de un bump
+_OBSTACLE_AMP_MAX: float = 40.0   # px — altura máxima de un bump
+_OBSTACLE_WIDTH:   float = 35.0   # px — σ de la gaussiana (anchura característica)
+_OBSTACLE_GAP_MIN: float = 150.0  # px — separación mínima entre centros consecutivos
+_OBSTACLE_GAP_MAX: float = 500.0  # px — separación máxima entre centros consecutivos
+
 
 class Terrain:
     """
     Genera el terreno proceduralmente y lo registra en pymunk como cuerpo estático.
 
     La forma del terreno se define como:
-        height_at(x) = BASE_Y + amp_factor(x) · Σ amp_i · sin(freq_i · x + phase_i)
+        height_at(x) = BASE_Y
+                     + amp_factor(x) · Σ amp_i · sin(freq_i · x + phase_i)   [ondas]
+                     - Σ bump_j · exp(-((x - x_j) / σ)²)                      [rocas]
 
-    donde las fases phase_i son aleatorias según el seed, y amp_factor(x) crece
-    con la distancia para aumentar la dificultad de forma gradual.
+    donde las fases phase_i y las posiciones x_j son aleatorias según el seed,
+    y amp_factor(x) crece con la distancia para aumentar la dificultad gradual.
 
     Dos propiedades clave:
       - Determinismo: dado el mismo seed, height_at(x) devuelve siempre
@@ -141,6 +166,19 @@ class Terrain:
             # Frecuencia angular: ω = 2π / T (unidades: rad/px)
             freq  = 2.0 * math.pi / period
             self._waves.append((freq, amp_base, phase))
+
+        # Generar obstáculos usando el MISMO rng, DESPUÉS de las fases de ondas.
+        # El orden de las llamadas a rng es determinista: dado un seed, siempre
+        # se generan las mismas fases de ondas Y los mismos obstáculos.
+        # Cambiar _WAVE_DEFS o _OBSTACLE_COUNT desplazaría la secuencia, por lo
+        # que cualquier cambio en esos valores invalida checkpoints anteriores.
+        self._bumps: list[tuple[float, float]] = []  # (x_center, amplitude)
+        x_bump = _OBSTACLE_START_X
+        for _ in range(_OBSTACLE_COUNT):
+            gap = float(rng.uniform(_OBSTACLE_GAP_MIN, _OBSTACLE_GAP_MAX))
+            x_bump += gap
+            amp = float(rng.uniform(_OBSTACLE_AMP_MIN, _OBSTACLE_AMP_MAX))
+            self._bumps.append((x_bump, amp))
 
     # ------------------------------------------------------------------
     # Registro en pymunk
@@ -239,7 +277,41 @@ class Terrain:
             for freq, amp, phase in self._waves
         )
 
-        return _BASE_Y + offset
+        # Restar bump_offset: las rocas son protrusiones → reducen y → terreno sube.
+        return _BASE_Y + offset - self._bump_offset(x)
+
+    def _bump_offset(self, x: float) -> float:
+        """
+        Suma la contribución de todos los bumps en la posición x.
+
+        Cada bump es una campana gaussiana:
+            contribucion_i = amp_i · exp(-((x - x_c_i) / _OBSTACLE_WIDTH)²)
+
+        El valor es siempre >= 0. Al restarlo en height_at(), el terreno sube
+        (y disminuye en pygame coords) → la roca protruye sobre el nivel base.
+
+        Por qué gaussiana y no una forma triangular o cuadrada:
+            La gaussiana es diferenciable en todo su dominio → slope_at() la
+            diferencia sin discontinuidades. Una función triangular tendría
+            vértice no diferenciable, lo que producía un salto en slope_at()
+            y un segmento pymunk con ángulo brusco que puede "atrapar" ruedas.
+
+        Por qué omitir bumps lejanos (dist > 4σ):
+            exp(-(4)²) = exp(-16) ≈ 10⁻⁷ px — contribución completamente
+            despreciable. El check evita iterar sobre los 30 bumps en cada
+            llamada a height_at(); solo los bumps dentro del rango computan.
+
+        Returns:
+            Offset positivo en px (cuánto sube el terreno por los bumps).
+        """
+        total = 0.0
+        for x_c, amp in self._bumps:
+            dist = x - x_c
+            # Umbral de 4σ: más allá la gaussiana es ~10⁻⁷, irrelevante
+            if abs(dist) > _OBSTACLE_WIDTH * 4:
+                continue
+            total += amp * math.exp(-(dist / _OBSTACLE_WIDTH) ** 2)
+        return total
 
     def slope_at(self, x: float, eps: float = 1.0) -> float:
         """
