@@ -13,12 +13,14 @@ Prohibido: contener física, lógica de IA, dibujar directamente.
 
 import argparse
 import sys
+from pathlib import Path
 
 import numpy as np
 import pygame
+import torch
 
 from ai.genome import Genome
-from config.settings import FPS, SCREEN_HEIGHT, SCREEN_WIDTH
+from config.settings import FPS, MODEL_DIR, SCREEN_HEIGHT, SCREEN_WIDTH
 from game.environment import Environment
 
 # Segundos que la pantalla permanece congelada al terminar el episodio,
@@ -32,7 +34,7 @@ def _parse_args() -> argparse.Namespace:
 
     Returns:
         Namespace con atributos:
-            mode (str): 'play' (manual) o 'train' (futuro Fase 6).
+            mode (str): modo de ejecución.
             seed (int): semilla del terreno para reproducibilidad.
     """
     parser = argparse.ArgumentParser(
@@ -40,12 +42,13 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--mode",
-        choices=["play", "train", "random_ai"],
+        choices=["play", "train", "random_ai", "watch"],
         default="play",
         help=(
             "'play' para control manual, "
             "'random_ai' para ver una red con pesos aleatorios, "
-            "'train' para entrenamiento neuroevolutivo (Fase 6)."
+            "'watch' para ver el mejor genoma entrenado (carga best_genome.pt), "
+            "'train' para entrenamiento neuroevolutivo."
         ),
     )
     parser.add_argument(
@@ -83,6 +86,56 @@ def _build_action(keys: pygame.key.ScancodeWrapper) -> tuple[float, float]:
     return accel, brake
 
 
+def _load_best_genome() -> tuple[Genome, float, int]:
+    """
+    Carga el mejor genoma entrenado desde MODEL_DIR/best_genome.pt.
+
+    Si el archivo no existe, imprime un mensaje claro y termina el proceso
+    con código de error 1. No tiene sentido arrancar el modo watch sin un
+    genoma previamente entrenado.
+
+    Qué hace torch.load():
+        Deserializa el dict que guardamos en trainer._save_checkpoint():
+        {'weights': torch.Tensor(470,), 'fitness': float, 'generation': int}.
+        Es pickle especializado de PyTorch; reconoce tensores guardados con
+        torch.save() y los reconstruye en memoria sin pasar por numpy.
+
+    Returns:
+        (genome, fitness, generation): el Genome reconstruido y sus metadatos.
+    """
+    best_path = Path(MODEL_DIR) / "best_genome.pt"
+
+    if not best_path.exists():
+        # Mensaje accionable: le decimos exactamente cómo solucionar el problema.
+        print(
+            f"[watch] Error: no se encontró '{best_path}'.\n"
+            f"        Primero entrena con: python main.py --mode train"
+        )
+        sys.exit(1)
+
+    # weights_only=False porque el dict guardado contiene escalares Python
+    # (float, int) además del tensor de pesos. PyTorch >= 2.0 requiere
+    # especificarlo explícitamente para evitar el warning; es seguro aquí
+    # porque el archivo lo generamos nosotros mismos en trainer.py.
+    data = torch.load(best_path, weights_only=False)
+
+    genome = Genome()
+
+    # data['weights'] es torch.Tensor (470,); set_weights() espera np.ndarray.
+    # .numpy() comparte el buffer de memoria con el tensor (sin copia) cuando
+    # el tensor está en CPU, que es siempre nuestro caso en este proyecto.
+    genome.set_weights(data['weights'].numpy())
+
+    fitness:    float = float(data['fitness'])
+    generation: int   = int(data['generation'])
+
+    print(
+        f"[watch] Genoma cargado — generación {generation}, "
+        f"fitness {fitness:.1f}"
+    )
+    return genome, fitness, generation
+
+
 def main() -> None:
     """
     Game loop principal. Inicializa pygame, corre el juego y sale limpiamente.
@@ -91,7 +144,7 @@ def main() -> None:
       1. Vaciar la cola de eventos del sistema (QUIT, etc.).
       2. clock.tick(FPS) → mide el dt real de este frame.
       3. Si estamos en pausa post-episodio: renderizar y contar tiempo.
-      4. Leer teclado → acción.
+      4. Leer teclado / red neuronal → acción.
       5. env.step(action, dt) → avanza la simulación.
       6. env.render(surface) → dibuja el frame.
       7. pygame.display.flip() → muestra el frame en pantalla.
@@ -118,10 +171,37 @@ def main() -> None:
 
     env = Environment(seed=args.seed)
 
-    # En modo random_ai, un Genome con pesos Kaiming aleatorios controla el vehículo.
-    # El estado del frame anterior se guarda aquí para alimentar la red en el siguiente.
+    # ------------------------------------------------------------------
+    # Selección del controlador según el modo
+    # ------------------------------------------------------------------
+    # 'play'      → teclado (genome=None, se lee pygame.key.get_pressed()).
+    # 'random_ai' → Genome con pesos Kaiming aleatorios, sin entrenar.
+    # 'watch'     → mejor Genome guardado en disco por trainer.py.
+    # Los tres modos comparten el mismo game loop; la diferencia es solo
+    # qué objeto genera la acción en cada frame.
+    genome: Genome | None
+
+    if args.mode == "random_ai":
+        genome = Genome()
+
+    elif args.mode == "watch":
+        # _load_best_genome() hace sys.exit(1) si el archivo no existe,
+        # así que si llegamos aquí el genoma está garantizado.
+        genome, fitness, generation = _load_best_genome()
+
+        # Actualizamos el título de la ventana con los metadatos del genoma,
+        # para que el usuario sepa qué generación y fitness está observando.
+        pygame.display.set_caption(
+            f"Hill Climb AI — watch | gen {generation} | fitness {fitness:.0f}"
+        )
+
+    else:
+        # 'play' y 'train' — en 'train' main.py no se usa; el entrenamiento
+        # corre completamente en trainer.py en modo headless.
+        genome = None
+
+    # Estado del frame anterior para alimentar la red neuronal.
     # El primer frame usa ceros (el vehículo aún no se ha movido).
-    genome: Genome | None = Genome() if args.mode == "random_ai" else None
     current_state: np.ndarray = np.zeros(14, dtype=np.float32)
 
     # Acumulador para la pausa al final del episodio
@@ -167,7 +247,7 @@ def main() -> None:
             pygame.display.flip()
             continue   # saltamos el step normal hasta que se reinicie
 
-        # Paso 4: construir acción — teclado en modo 'play', red en 'random_ai'.
+        # Paso 4: construir acción — teclado en modo 'play', red en los demás.
         if genome is not None:
             # La red recibe el estado del frame anterior y devuelve (accel, brake).
             # genome.forward() retorna np.ndarray (2,); env.step() acepta cualquier
@@ -180,8 +260,8 @@ def main() -> None:
         # Paso 5: avanzar la física un frame y capturar el nuevo estado.
         state, _reward, done, _info = env.step(action, dt)
 
-        # Guardamos el estado para el próximo frame (solo lo usa random_ai,
-        # pero actualizarlo siempre no tiene costo apreciable).
+        # Guardamos el estado para el próximo frame (solo lo usan los modos
+        # con red neuronal, pero actualizarlo siempre no tiene costo apreciable).
         current_state = np.array(state, dtype=np.float32)
 
         # Paso 6: dibujar el frame sobre la surface
