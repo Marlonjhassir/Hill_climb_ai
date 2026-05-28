@@ -1,6 +1,6 @@
 # Progreso del proyecto
 
-## Fase actual: 5 — Red Neuronal ✅ (completada 2026-05-27)
+## Fase actual: 6 — Algoritmo Genético ✅ (completada 2026-05-28)
 
 ## Fase 1 — Preparación ✅ (completada por el usuario)
 
@@ -141,14 +141,36 @@ terreno procedural cuál produce mejor comportamiento de aprendizaje.
 
 ---
 
+---
+
+## Fase 6 — Algoritmo Genético ✅ (completada 2026-05-28)
+
+### Archivos implementados
+| Archivo | Estado | Notas |
+|---|---|---|
+| `ai/genetic_algorithm.py` | ✅ | Torneo, crossover uniforme, elitismo |
+
+### Detalles de GeneticAlgorithm
+- `initialize()` — crea 50 `Genome` con pesos Kaiming aleatorios.
+- `evolve()` — ordena por fitness, copia los 3 mejores (elitismo, fitness reset), completa con torneo + crossover + mutación.
+- `_tournament_select()` — `random.sample` sin repetición, gana el de mayor fitness.
+- `_crossover(a, b)` — `np.where(mask, w_a, w_b)` con mask 50%; activa con prob. `CROSSOVER_RATE=0.7`.
+
+### Verificación
+- Población inicial de 50, todos con fitness=0.0 ✅
+- `evolve()` produce exactamente 50 individuos con fitness reseteado ✅
+- Pesos del mejor individuo preservados en los 3 élites ✅
+- Crossover: cuando no se activa (prob. 30%), hijo = copia de parent_a ✅
+
+---
+
 ## Último avance
-- Fecha: 2026-05-27
-- Archivos: `ai/neural_network.py`, `ai/genome.py`, `main.py`
-- Estado: Fase 5 completada — red neuronal controla el vehículo en tiempo real con `--mode random_ai`
+- Fecha: 2026-05-28
+- Archivo: `ai/genetic_algorithm.py`
+- Estado: Fase 6 completada — operadores evolutivos verificados
 
 ## Siguiente paso
-- Fase 6: `ai/genetic_algorithm.py`
-  - Selección por torneo (TOURNAMENT_SIZE=3)
-  - Crossover uniforme (50% por peso)
-  - Mutación gaussiana (ya en Genome.mutate())
-  - Elitismo: top ELITISM_COUNT=3 pasan sin modificar
+- Fase 7: `ai/trainer.py` — orquestador del entrenamiento
+  - Loop de generaciones: evaluar → fitness → evolve
+  - Persistencia: guardar mejor genoma y población completa
+  - Logger: imprimir métricas por generación en consola
